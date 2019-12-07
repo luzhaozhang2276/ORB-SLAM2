@@ -105,6 +105,13 @@ PnPsolver::PnPsolver(const Frame &F, const vector<MapPoint*> &vpMapPointMatches)
     pws(0), us(0), alphas(0), pcs(0), maximum_number_of_correspondences(0), number_of_correspondences(0), mnInliersi(0),
     mnIterations(0), mnBestInliers(0), N(0)
 {
+    // mnIterations记录当前已经Ransac的次数
+    // pws 每个3D点有(X Y Z)三个值
+    // us 每个图像2D点有(u v)两个值
+    // alphas 每个3D点由四个控制点拟合，有四个系数
+    // pcs 每个3D点有(X Y Z)三个值
+    // maximum_number_of_correspondences 用于确定当前迭代所需内存是否够用
+
     // 根据点数初始化容器的大小
     mvpMapPointMatches = vpMapPointMatches;
     mvP2D.reserve(F.mvpMapPoints.size());
@@ -161,15 +168,16 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     mRansacProb = probability;
     mRansacMinInliers = minInliers;
     mRansacMaxIts = maxIterations;
-    mRansacEpsilon = epsilon;
-    mRansacMinSet = minSet;
+    mRansacEpsilon = epsilon; // inlier的比例
+    mRansacMinSet = minSet;   // mRansacMinSet为每次RANSAC需要的特征点数，默认为4组3D-2D对应点
 
     N = mvP2D.size(); // number of correspondences, 所有二维特征点个数
 
     mvbInliersi.resize(N);// inlier index, mvbInliersi记录每次迭代inlier的点
 
     // Adjust Parameters according to number of correspondences
-    int nMinInliers = N*mRansacEpsilon;// RANSAC的残差
+    // 根据输入参数，综合确定一个ransac inlier数，避免函数参数中minInliers设置过小
+    int nMinInliers = N*mRansacEpsilon;
     if(nMinInliers<mRansacMinInliers)
         nMinInliers=mRansacMinInliers;
     if(nMinInliers<minSet)
@@ -182,24 +190,28 @@ void PnPsolver::SetRansacParameters(double probability, int minInliers, int maxI
     // Set RANSAC iterations according to probability, epsilon, and max iterations
     int nIterations;
 
-    if(mRansacMinInliers==N)//根据期望的残差大小来计算RANSAC需要迭代的次数
+    if(mRansacMinInliers==N)  //根据期望的残差大小来计算RANSAC需要迭代的次数
         nIterations=1;
     else
         nIterations = ceil(log(1-mRansacProb)/log(1-pow(mRansacEpsilon,3)));
 
     mRansacMaxIts = max(1,min(nIterations,mRansacMaxIts));
 
-    mvMaxError.resize(mvSigma2.size());// 图像提取特征的时候尺度层数
-    for(size_t i=0; i<mvSigma2.size(); i++)// 不同的尺度，设置不同的最大偏差
-        mvMaxError[i] = mvSigma2[i]*th2;
+    mvMaxError.resize(mvSigma2.size()); // 每个2D特征点对应不同的误差阈值
+    for(size_t i=0; i<mvSigma2.size(); i++) // 不同的尺度，设置不同的最大偏差
+        mvMaxError[i] = mvSigma2[i]*th2;    // th2: 判断是否满足inlier的重投影误差阈值的平方
 }
 
 cv::Mat PnPsolver::find(vector<bool> &vbInliers, int &nInliers)
 {
     bool bFlag;
-    return iterate(mRansacMaxIts,bFlag,vbInliers,nInliers);    
+    return iterate(mRansacMaxIts,bFlag,vbInliers,nInliers);
 }
 
+// ！！！！！iterator函数内部会有ransac迭代，外部会以while的方式多次调用iterate
+// do {
+//    iterator();
+// } while (!bNomore);
 cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInliers, int &nInliers)
 {
     bNoMore = false;
@@ -209,7 +221,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
     // mRansacMinSet为每次RANSAC需要的特征点数，默认为4组3D-2D对应点
     set_maximum_number_of_correspondences(mRansacMinSet);
 
-    // N为所有2D点的个数, mRansacMinInliers为RANSAC迭代过程中最少的inlier数
+    // N为所有2D点的个数, mRansacMinInliers为RANSAC迭代终止的inlier阈值，如果已经大于所有点的个数，则停止迭代
     if(N<mRansacMinInliers)
     {
         bNoMore = true;
@@ -217,9 +229,12 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
     }
 
     // mvAllIndices为所有参与PnP的2D点的索引
-    // vAvailableIndices为每次从mvAllIndices中随机挑选mRansacMinSet组3D-2D对应点进行一次RANSAC
+    // 每次ransac，将mvAllIndices赋值一份给vAvailableIndices，并从中随机挑选mRansacMinSet组3D-2D对应点进行一次RANSAC
     vector<size_t> vAvailableIndices;
 
+    // nIterations: 根据ransac概率值计算出来的迭代次数
+    // nCurrentIterations：记录每调用一次iterate函数，内部会有多次迭代
+    // mnIterations：记录iterate调用次数 * 内部迭代次数总迭代次数
     int nCurrentIterations = 0;
     while(mnIterations<mRansacMaxIts || nCurrentIterations<nIterations)
     {
@@ -227,6 +242,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         mnIterations++;
         reset_correspondences();
 
+        // 这个赋值稍微有些低效
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
@@ -239,6 +255,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
             // 将对应的3D-2D压入到pws和us
             add_correspondence(mvP3Dw[idx].x,mvP3Dw[idx].y,mvP3Dw[idx].z,mvP2D[idx].x,mvP2D[idx].y);
 
+            // ！！！将已经被选中参与ransac的点去除（用vector最后一个点覆盖），避免抽取同一个数据参与ransac
             vAvailableIndices[randi] = vAvailableIndices.back();
             vAvailableIndices.pop_back();
         }
@@ -252,6 +269,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         if(mnInliersi>=mRansacMinInliers)
         {
             // If it is the best solution so far, save it
+            // 记录inlier个数最多的一组解
             if(mnInliersi>mnBestInliers)
             {
                 mvbBestInliers = mvbInliersi;
@@ -386,9 +404,10 @@ void PnPsolver::CheckInliers()
 }
 
 // number_of_correspondences为RANSAC每次PnP求解时时3D点和2D点匹配对数
-// RANSAC需要很多次，maximum_number_of_correspondences为匹配对数最大值
-// 这个变量用于决定pws us alphas pcs容器的大小，因此只能逐渐变大不能减小
-// 如果maximum_number_of_correspondences之前设置的过小，则重新设置，并重新初始化pws us alphas pcs的大小
+// maximum_number_of_correspondences当前匹配点个数
+// 这个变量用于决定pws us alphas pcs容器的大小
+// 如果maximum_number_of_correspondences当前设置的过小，则重新设置，并重新初始化pws us alphas pcs的大小
+// 如果新的设定值比maximum_number_of_correspondences小，即之前分配的内存大小够用，则不重新分配内存
 void PnPsolver::set_maximum_number_of_correspondences(int n)
 {
   if (maximum_number_of_correspondences < n) {
@@ -398,10 +417,10 @@ void PnPsolver::set_maximum_number_of_correspondences(int n)
     if (pcs != 0) delete [] pcs;
 
     maximum_number_of_correspondences = n;
-    pws = new double[3 * maximum_number_of_correspondences];// 每个3D点有(X Y Z)三个值
-    us = new double[2 * maximum_number_of_correspondences];// 每个图像2D点有(u v)两个值
-    alphas = new double[4 * maximum_number_of_correspondences];// 每个3D点由四个控制点拟合，有四个系数
-    pcs = new double[3 * maximum_number_of_correspondences];// 每个3D点有(X Y Z)三个值
+    pws = new double[3 * maximum_number_of_correspondences];    // 每个3D点有(X Y Z)三个值
+    us = new double[2 * maximum_number_of_correspondences];     // 每个图像2D点有(u v)两个值
+    alphas = new double[4 * maximum_number_of_correspondences]; // 每个3D点由四个控制点拟合，有四个系数
+    pcs = new double[3 * maximum_number_of_correspondences];    // 每个3D点有(X Y Z)三个值
   }
 }
 
@@ -422,6 +441,7 @@ void PnPsolver::add_correspondence(double X, double Y, double Z, double u, doubl
   number_of_correspondences++;
 }
 
+// 获得4个控制点坐标，存在4*3的二维数组cws中
 void PnPsolver::choose_control_points(void)
 {
   // Take C0 as the reference points centroid:
@@ -495,8 +515,8 @@ void PnPsolver::compute_barycentric_coordinates(void)
   cvInvert(&CC, &CC_inv, CV_SVD);
   double * ci = cc_inv;
   for(int i = 0; i < number_of_correspondences; i++) {
-    double * pi = pws + 3 * i;// pi指向第i个3D点的首地址
-    double * a = alphas + 4 * i;// a指向第i个控制点系数alphas的首地址
+    double * pi = pws + 3 * i;    // pi指向第i个3D点的首地址
+    double * a = alphas + 4 * i;  // a指向第i个控制点系数alphas的首地址
 
     // pi[]-cws[0][]表示将pi和步骤1进行相同的平移
     for(int j = 0; j < 3; j++)
