@@ -480,6 +480,7 @@ void PnPsolver::choose_control_points(void)
 
   // 步骤2.3：得到C1, C2, C3三个3D控制点，最后加上之前减掉的第一个控制点这个偏移量
   for(int i = 1; i < 4; i++) {
+    // ！！！
     double k = sqrt(dc[i - 1] / number_of_correspondences);
     for(int j = 0; j < 3; j++)
       cws[i][j] = cws[0][j] + k * uct[3 * (i - 1) + j];
@@ -529,8 +530,8 @@ void PnPsolver::compute_barycentric_coordinates(void)
 
 // 填充最小二乘的M矩阵
 // 对每一个3D参考点：
-// |ai1 0    -ai1*ui, ai2  0    -ai2*ui, ai3 0   -ai3*ui, ai4 0   -ai4*ui|
-// |0   ai1  -ai1*vi, 0    ai2  -ai2*vi, 0   ai3 -ai3*vi, 0   ai4 -ai4*vi|
+// |[ai1*fu, 0,   ai1*(uc-ui)], [ai2*fu, 0,   ai2*(uc-ui)], [ai3*fu, 0,    ai3*(uc-ui), [ai4*fu, 0,   ai4*(uc-ui)]|
+// |[0,   ai1*fv, ai1*(vc-vi),  [0,   ai2*fv, ai2*(vc-vi)], [0,    ai3*fv, ai3*(vc-vi), [0,   ai1*fv, ai4*(vc-vi)]|
 // 其中i从0到4
 void PnPsolver::fill_M(CvMat * M,
 		  const int row, const double * as, const double u, const double v)
@@ -577,7 +578,7 @@ void PnPsolver::compute_pcs(void)
 
 double PnPsolver::compute_pose(double R[3][3], double t[3])
 {
-  // 步骤1：获得EPnP算法中的四个控制点
+  // 步骤1：获得EPnP算法中的四个控制点（构成质心坐标系）
   choose_control_points();
   // 步骤2：计算世界坐标系下每个3D点用4个控制点线性表达时的系数alphas，公式1
   compute_barycentric_coordinates();
@@ -596,13 +597,21 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   // 步骤3：求解Mx = 0
   // SVD分解M'M
   cvMulTransposed(M, &MtM, 1);
+  // 通过（svd分解）求解齐次最小二乘解得到相机坐标系下四个控制点：ut
+  // ut的每一行对应一组可能的解
+  // 最小特征值对应的特征向量最接近待求的解，由于噪声和约束不足的问题，导致真正的解可能是多个特征向量的线性叠加
   cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T);//得到向量ut
   cvReleaseMat(&M);
 
+  // 上述通过求解齐次最小二乘获得解不具有尺度，这里通过构造另外一个最小二乘（L*Betas = Rho）来求解尺度Betas
+  // L_6x10 * Betas10x1 = Rho_6x1
   double l_6x10[6 * 10], rho[6];
   CvMat L_6x10 = cvMat(6, 10, CV_64F, l_6x10);
   CvMat Rho    = cvMat(6,  1, CV_64F, rho);
 
+  // Betas10        = [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+  // |dv00, 2*dv01, dv11, 2*dv02, 2*dv12, dv22, 2*dv03, 2*dv13, 2*dv23, dv33|, 1*10
+  // 4个控制点之间总共有6个距离，因此为6*10
   compute_L_6x10(ut, l_6x10);
   compute_rho(rho);
 
@@ -613,16 +622,22 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   // 通过优化得到剩下的betas
   // 最后计算R t
 
-  // EPnP论文公式10 15
+  // Betas10        = [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+  // betas_approx_1 = [B00 B01     B02         B03]
+  // 建模为除B11、B12、B13、B14四个参数外其它参数均为0进行最小二乘求解，求出B0、B1、B2、B3粗略解
   find_betas_approx_1(&L_6x10, &Rho, Betas[1]);
+  // 高斯牛顿法优化B0、B1、B2、B3
   gauss_newton(&L_6x10, &Rho, Betas[1]);
   rep_errors[1] = compute_R_and_t(ut, Betas[1], Rs[1], ts[1]);
 
-  // EPnP论文公式11 15
+  // betas_approx_2 = [B00 B01 B11                            ]
+  // 建模为除B00、B01、B11三个参数外其它参数均为0进行最小二乘求解，求出B0、B1、B2、B3粗略解
   find_betas_approx_2(&L_6x10, &Rho, Betas[2]);
   gauss_newton(&L_6x10, &Rho, Betas[2]);
   rep_errors[2] = compute_R_and_t(ut, Betas[2], Rs[2], ts[2]);
 
+  // betas_approx_3 = [B00 B01 B11 B02 B12                    ]
+  // 建模为除B00、B01、B11、B02、B12五个参数外其它参数均为0进行最小二乘求解，求出B0、B1、B2、B3粗略解
   find_betas_approx_3(&L_6x10, &Rho, Betas[3]);
   gauss_newton(&L_6x10, &Rho, Betas[3]);
   rep_errors[3] = compute_R_and_t(ut, Betas[3], Rs[3], ts[3]);
@@ -774,9 +789,9 @@ double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
   return reprojection_error(R, t);
 }
 
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
-// betas_approx_1 = [B11 B12     B13         B14]
-
+// betas10        = [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+// betas_approx_1 = [B00 B01     B02         B03]
+// 获得B0、B1、B2、B3的粗略解
 void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -793,7 +808,10 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
 
   cvSolve(&L_6x4, Rho, &B4, CV_SVD);
 
+  // 由于：B00 = B0 * B0一定为正
   if (b4[0] < 0) {
+    // 如果B00为负，则整体取负
+    // 取根号：sqrt(B00)=B0
     betas[0] = sqrt(-b4[0]);
     betas[1] = -b4[1] / betas[0];
     betas[2] = -b4[2] / betas[0];
@@ -806,9 +824,9 @@ void PnPsolver::find_betas_approx_1(const CvMat * L_6x10, const CvMat * Rho,
   }
 }
 
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
-// betas_approx_2 = [B11 B12 B22                            ]
-
+// betas10        = [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+// betas_approx_2 = [B00 B01 B11                            ]
+// 获得B0、B1、B2、B3的粗略解
 void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -824,6 +842,9 @@ void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
 
   cvSolve(&L_6x3, Rho, &B3, CV_SVD);
 
+  // B00 = B0*B0, B11 = B1*B1，B00和B11都为正
+  // 如果无法满足B00和B11同时为正，则将B11置为0
+  // 取根号：sqrt(B00)=B0
   if (b3[0] < 0) {
     betas[0] = sqrt(-b3[0]);
     betas[1] = (b3[2] < 0) ? sqrt(-b3[2]) : 0.0;
@@ -832,15 +853,16 @@ void PnPsolver::find_betas_approx_2(const CvMat * L_6x10, const CvMat * Rho,
     betas[1] = (b3[2] > 0) ? sqrt(b3[2]) : 0.0;
   }
 
+  // 上述步骤中求解的B0和B1都大于0，但是如果B01 < 0，说明B0和B1异号，则将B0或B1其中一个取反
   if (b3[1] < 0) betas[0] = -betas[0];
 
   betas[2] = 0.0;
   betas[3] = 0.0;
 }
 
-// betas10        = [B11 B12 B22 B13 B23 B33 B14 B24 B34 B44]
-// betas_approx_3 = [B11 B12 B22 B13 B23                    ]
-
+// betas10        = [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+// betas_approx_3 = [B00 B01 B11 B02 B12                    ]
+// 获得B0、B1、B2、B3的粗略解
 void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
 			       double * betas)
 {
@@ -858,6 +880,9 @@ void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
 
   cvSolve(&L_6x5, Rho, &B5, CV_SVD);
 
+  // B00 = B0*B0, B11 = B1*B1，B00和B11都为正
+  // 如果无法满足B00和B11同时为正，则将B11置为0
+  // 取根号：sqrt(B00)=B0
   if (b5[0] < 0) {
     betas[0] = sqrt(-b5[0]);
     betas[1] = (b5[2] < 0) ? sqrt(-b5[2]) : 0.0;
@@ -873,6 +898,10 @@ void PnPsolver::find_betas_approx_3(const CvMat * L_6x10, const CvMat * Rho,
 // 计算并填充矩阵L
 void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
 {
+  // ut为12*12的特征向量矩阵，ut每一行为一组特征向量解（u的每一列为一组特征向量解）
+  // 由于svd按照特征值大小降序排列，因此越往下排列的特征向量越优
+  // 论文中是分别讨论了N=1, N=2, N=3, N=4四种情况进行求解，这里实现时按照最一般的情况进行求解，即N=4
+  // 因此这里使用v[0], v[1], v[2], v[3]分别取出最优的四组特征向量解
   const double * v[4];
 
   v[0] = ut + 12 * 11;
@@ -880,6 +909,10 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
   v[2] = ut + 12 *  9;
   v[3] = ut + 12 *  8;
 
+  // dv三维数组
+  // 4代表4个svd中的最优四个特征向量，
+  // 6代表4个控制点之间的向量差（距离）：[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]之间的向量差
+  // 3代表向量差的x, y, z三个轴
   double dv[4][6][3];
 
   for(int i = 0; i < 4; i++) {
@@ -889,6 +922,8 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
       dv[i][j][1] = v[i][3 * a + 1] - v[i][3 * b + 1];
       dv[i][j][2] = v[i][3 * a + 2] - v[i][3 * b + 2];
 
+      // 4个相机坐标系下控制点有6个距离
+      // [j=0, a=0, b=1], [j=1, a=0, b=2], [j=2, a=0, b=3], [j=3, a=1, b=2], [j=4, a=1, b=3], [j=5, a=2, b=3]
       b++;
       if (b > 3) {
         a++;
@@ -897,23 +932,38 @@ void PnPsolver::compute_L_6x10(const double * ut, double * l_6x10)
     }
   }
 
+  // Beta用B简写, ||x||表示对x取平方和（二范数），ij表示从4个控制点中选择其中2个，总共有6中选择（用k表示）
+  // Lij = ||(B0*v0[i]+B1*v1[i]+B2*v2[i]+B3*v3[i]) - (B0*v0[i]+B1*v1[i]+B2*v2[i]+B3*v3[i])||
+  //     = ||B0*(v0[i]-v0[j]) + B1*(v1[i]-v1[j]) + B2*(v2[i]-v2[j]) + B3*(v3[i]-v3[j])||
+  // Lk = ||B0*dv0[k] + B1*dv1[k] + B2*dv2[k] + B3*dv3[k]||
+  //    = (dv0[k]^2 * B0^2) + (2*dv0[k]*dv1[k]*B0*B1) + (dv1[k]^2 * B1^2) + 
+  //      (2*dv0[k]*dv2[k]*B0*B2) + (2*dv1[k]*dv2[k]*B1*B2) +
+  //      (dv2[k]^2 * B2^2) + (2*dv0[k]*dv3[k]*B0*B3) +
+  //      (2*dv1[k]*dv3[k]*B1*B3) + (2*dv2[k]*dv3[k]*B2*B3) + (dv3[k]^2 * B3^2)
+  // 简写为： B00简写为B0*B0，dv0[k]^2简写为dv00，其它的以此类推
+  // dv00*B00 + 2*dv01*B01 + dv11*B11 + 2*dv02*B02 + 2*dv12*B12 + dv22*B22 + 2*dv03*B03 + 2*dv13*B13 + 2*dv23*B23 + dv33*B33
+  // 即：L * Betas
+  // Lk: |dv00, 2*dv01, dv11, 2*dv02, 2*dv12, dv22, 2*dv03, 2*dv13, 2*dv23, dv33|, 1*10
+  // Betas：[B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+  // 四个控制点共6个距离，因此L为6*10
   for(int i = 0; i < 6; i++) {
     double * row = l_6x10 + 10 * i;
 
-    row[0] =        dot(dv[0][i], dv[0][i]);
-    row[1] = 2.0f * dot(dv[0][i], dv[1][i]);
-    row[2] =        dot(dv[1][i], dv[1][i]);
-    row[3] = 2.0f * dot(dv[0][i], dv[2][i]);
-    row[4] = 2.0f * dot(dv[1][i], dv[2][i]);
-    row[5] =        dot(dv[2][i], dv[2][i]);
-    row[6] = 2.0f * dot(dv[0][i], dv[3][i]);
-    row[7] = 2.0f * dot(dv[1][i], dv[3][i]);
-    row[8] = 2.0f * dot(dv[2][i], dv[3][i]);
-    row[9] =        dot(dv[3][i], dv[3][i]);
+    row[0] =        dot(dv[0][i], dv[0][i]);  // dv0^2
+    row[1] = 2.0f * dot(dv[0][i], dv[1][i]);  // 2*dv0*dv1
+    row[2] =        dot(dv[1][i], dv[1][i]);  // dv1^2
+    row[3] = 2.0f * dot(dv[0][i], dv[2][i]);  // 2*dv0*dv2
+    row[4] = 2.0f * dot(dv[1][i], dv[2][i]);  // 2*dv1*dv2
+    row[5] =        dot(dv[2][i], dv[2][i]);  // dv2^2
+    row[6] = 2.0f * dot(dv[0][i], dv[3][i]);  // 2*dv0*dv3
+    row[7] = 2.0f * dot(dv[1][i], dv[3][i]);  // 2*dv1*dv3
+    row[8] = 2.0f * dot(dv[2][i], dv[3][i]);  // 2*dv2*dv3
+    row[9] =        dot(dv[3][i], dv[3][i]);  // dv3^2
   }
 }
 
 // 计算四个控制点任意两点间的距离，总共6个距离
+// (0, 1)、(0, 2)、(0, 3)、(1, 2)、(1, 3)、(2, 3)
 void PnPsolver::compute_rho(double * rho)
 {
   rho[0] = dist2(cws[0], cws[1]);
@@ -931,11 +981,21 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
     const double * rowL = l_6x10 + i * 10;
     double * rowA = A->data.db + i * 4;
 
-    rowA[0] = 2 * rowL[0] * betas[0] +     rowL[1] * betas[1] +     rowL[3] * betas[2] +     rowL[6] * betas[3];
-    rowA[1] =     rowL[1] * betas[0] + 2 * rowL[2] * betas[1] +     rowL[4] * betas[2] +     rowL[7] * betas[3];
-    rowA[2] =     rowL[3] * betas[0] +     rowL[4] * betas[1] + 2 * rowL[5] * betas[2] +     rowL[8] * betas[3];
-    rowA[3] =     rowL[6] * betas[0] +     rowL[7] * betas[1] +     rowL[8] * betas[2] + 2 * rowL[9] * betas[3];
+    // A为6*4矩阵
+    // 详细公式见：compute_L_6x10 函数中的注释
+    // （dv00*B00 + 2*dv01*B01 + dv11*B11 + 2*dv02*B02 + 2*dv12*B12 + dv22*B22 + 2*dv03*B03 + 2*dv13*B13 + 2*dv23*B23 + dv33*B33）
+    // rowL: |dv00, 2*dv01, dv11, 2*dv02, 2*dv12, dv22, 2*dv03, 2*dv13, 2*dv23, dv33|
+    // wubo 这里雅克比求错了，不需要乘以2
+    rowA[0] = 2 * rowL[0] * betas[0] +     rowL[1] * betas[1] +     rowL[3] * betas[2] +     rowL[6] * betas[3];  // 对B0求导
+    rowA[1] =     rowL[1] * betas[0] + 2 * rowL[2] * betas[1] +     rowL[4] * betas[2] +     rowL[7] * betas[3];  // 对B1求导
+    rowA[2] =     rowL[3] * betas[0] +     rowL[4] * betas[1] + 2 * rowL[5] * betas[2] +     rowL[8] * betas[3];  // 对B2求导
+    rowA[3] =     rowL[6] * betas[0] +     rowL[7] * betas[1] +     rowL[8] * betas[2] + 2 * rowL[9] * betas[3];  // 对B3求导
 
+    // b为6*1矩阵
+    // Betas: [B00 B01 B11 B02 B12 B22 B03 B13 B23 B33]
+    // l_6x10 * Betas_10x1得到机体坐标系下控制点距离平方
+    // rho记录了世界坐标系下控制点之间距离平方
+    // b为机体坐标系下控制点平方距离 与 世界坐标系下控制点平方距离 的残差
     cvmSet(b, i, 0, rho[i] -
 	   (
 	    rowL[0] * betas[0] * betas[0] +
@@ -963,6 +1023,8 @@ void PnPsolver::gauss_newton(const CvMat * L_6x10, const CvMat * Rho,
   CvMat X = cvMat(4, 1, CV_64F, x);
 
   for(int k = 0; k < iterations_number; k++) {
+    // 构造Ax = B中的A和B，A为目标函数关于待优化变量（B0、B1、B2、B3）的雅克比，
+    // B为目标函数当前残差（相机坐标系下控制点之间的平方距离与世界坐标系下控制点之间的平方距离之差）
     compute_A_and_b_gauss_newton(L_6x10->data.db, Rho->data.db,
 				 betas, &A, &B);
     qr_solve(&A, &B, &X);
