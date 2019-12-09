@@ -65,7 +65,7 @@
 // s |v| = |0  fy v0||r21 r22 r23 t2||z|
 //   |1|   |0  0  1 ||r32 r32 r33 t3||1|
 
-// step1:用四个控制点来表达所有的3D点
+// step1: 构造质心坐标系，用四个控制点来表达所有的3D点
 // p_w = sigma(alphas_j * pctrl_w_j), j从0到4
 // p_c = sigma(alphas_j * pctrl_c_j), j从0到4
 // sigma(alphas_j) = 1,  j从0到4
@@ -261,9 +261,11 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         }
 
         // Compute camera pose
+        // EPnP算法求解R，t
         compute_pose(mRi, mti);
 
         // Check inliers
+        // 统计和记录inlier个数以及符合inlier的点：mnInliersi, mvbInliersi
         CheckInliers();
 
         if(mnInliersi>=mRansacMinInliers)
@@ -284,6 +286,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
                 tcw.copyTo(mBestTcw.rowRange(0,3).col(3));
             }
 
+            // 将所有符合inlier的3D-2D匹配点一起计算PnP求解R, t
             if(Refine())
             {
                 nInliers = mnRefinedInliers;
@@ -694,8 +697,13 @@ double PnPsolver::reprojection_error(const double R[3][3], const double t[3])
 }
 
 // 根据世界坐标系下的四个控制点与机体坐标下对应的四个控制点（和世界坐标系下四个控制点相同尺度），求取R t
+// 见《视觉SLAM十四讲从理论到实践》 7.9.1 3D-3D: ICP SVD方法
+// [U, S, Vt] = svd(A*B')，A为pc(i)列向量构成的矩阵，B为pw(i)列向量构成的矩阵
+// R = U*Vt
+// t = pc0 - R*pw0，pc0和pw0分别为相机坐标系和世界坐标系下3D点的中心坐标
 void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
 {
+  // 对相机坐标系和世界坐标系下3D点分别求平均得到中心点坐标：pc0和pw0
   double pc0[3], pw0[3];
 
   pc0[0] = pc0[1] = pc0[2] = 0.0;
@@ -715,12 +723,20 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
     pw0[j] /= number_of_correspondences;
   }
 
+  //     |pc_x_0, pc_x_1, pc_x_2,....pc_x_n|
+  // A = |pc_y_0, pc_y_1, pc_y_2,....pc_x_n|
+  //     |pc_z_0, pc_z_1, pc_z_2,....pc_x_n|
+
+  //     |pw_x_0, pw_x_1, pw_x_2,....pw_x_n|
+  // B = |pw_y_0, pw_y_1, pw_y_2,....pw_x_n|
+  //     |pw_z_0, pw_z_1, pw_z_2,....pw_x_n|
   double abt[3 * 3], abt_d[3], abt_u[3 * 3], abt_v[3 * 3];
   CvMat ABt   = cvMat(3, 3, CV_64F, abt);
   CvMat ABt_D = cvMat(3, 1, CV_64F, abt_d);
   CvMat ABt_U = cvMat(3, 3, CV_64F, abt_u);
   CvMat ABt_V = cvMat(3, 3, CV_64F, abt_v);
 
+  // 计算 A * B.transpose
   cvSetZero(&ABt);
   for(int i = 0; i < number_of_correspondences; i++) {
     double * pc = pcs + 3 * i;
@@ -743,6 +759,7 @@ void PnPsolver::estimate_R_and_t(double R[3][3], double t[3])
     R[0][0] * R[1][1] * R[2][2] + R[0][1] * R[1][2] * R[2][0] + R[0][2] * R[1][0] * R[2][1] -
     R[0][2] * R[1][1] * R[2][0] - R[0][1] * R[1][0] * R[2][2] - R[0][0] * R[1][2] * R[2][1];
 
+  // 
   if (det < 0) {
     R[2][0] = -R[2][0];
     R[2][1] = -R[2][1];
@@ -779,13 +796,18 @@ void PnPsolver::solve_for_sign(void)
 double PnPsolver::compute_R_and_t(const double * ut, const double * betas,
 			     double R[3][3], double t[3])
 {
+  // 通过Betas和特征向量，得到机体坐标系下四个控制点
   compute_ccs(betas, ut);
+  // 根据控制点和相机坐标系下每个点与控制点之间的关系，恢复出所有3D点在相机坐标系下的坐标
   compute_pcs();
 
+  // 随便取一个相机坐标系下3D点，如果z < 0，则表明3D点都在相机后面，则3D点坐标整体取负号
   solve_for_sign();
 
+  // 3D-3D svd方法求解ICP获得R，t
   estimate_R_and_t(R, t);
 
+  // 获得R，t后计算所有3D点的重投影误差平均值
   return reprojection_error(R, t);
 }
 
