@@ -353,6 +353,8 @@ bool Frame::isInFrustum(MapPoint *pMP, float viewingCosLimit)
 
     // Predict scale in the image
     // V-D 4) 根据深度预测尺度（对应特征点在一层）
+    // ！！！！通过函数调用可以发现，isInFrustum只会在Tracking.cpp中被当前mCurrentFrame调用
+    // 因此nPredictedLevel记录的是该3D点在mCurrentFrame上可能的被观测到的金字塔层数
     const int nPredictedLevel = pMP->PredictScale(dist,this);
 
     // Data used by the tracking

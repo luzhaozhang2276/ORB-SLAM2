@@ -409,6 +409,9 @@ bool MapPoint::IsInKeyFrame(KeyFrame *pKF)
  * @brief 更新平均观测方向以及观测距离范围
  *
  * 由于一个MapPoint会被许多相机观测到，因此在插入关键帧后，需要更新相应变量
+ * mNormalVector：3D点被观测的平均方向
+ * mfMaxDistance：观测到该3D点的最大距离
+ * mfMinDistance：观测到该3D点的最小距离
  * @see III - C2.2 c2.4
  */
 void MapPoint::UpdateNormalAndDepth()
@@ -450,8 +453,8 @@ void MapPoint::UpdateNormalAndDepth()
     {
         unique_lock<mutex> lock3(mMutexPos);
         // 另见PredictScale函数前的注释
-        mfMaxDistance = dist*levelScaleFactor;                           // 观测到该点的距离下限
-        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1]; // 观测到该点的距离上限
+        mfMaxDistance = dist*levelScaleFactor;                           // 观测到该点的距离最大值
+        mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1]; // 观测到该点的距离最小值
         mNormalVector = normal/n;                                        // 获得平均的观测方向
     }
 }
