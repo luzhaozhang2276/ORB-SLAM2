@@ -67,7 +67,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     // 这个变量后面没有用到，后面只关心匹配上的特征点
     mvbMatched1.resize(mvKeys1.size());
 
-    // 步骤1：组织特征点对
+    // 步骤1：组织特征点对 {i, matched(i)}
     for(size_t i=0, iend=vMatches12.size();i<iend; i++)
     {
         if(vMatches12[i]>=0)
@@ -144,6 +144,8 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
 
     // Try to reconstruct from homography or fundamental depending on the ratio (0.40-0.45)
     // 步骤5：从H矩阵或F矩阵中恢复R,t
+    // 参数50: 满足checkRT检测的3D点个数（checkRT时会恢复3D点）
+    // 参数1.0：进行checkRT时恢复的3D点视差角阈值
     if(RH>0.40)
         return ReconstructH(vbMatchesInliersH,H,mK,R21,t21,vP3D,vbTriangulated,1.0,50);
     else //if(pF_HF>0.6)

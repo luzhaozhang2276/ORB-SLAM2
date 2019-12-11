@@ -600,7 +600,7 @@ double PnPsolver::compute_pose(double R[3][3], double t[3])
   // 步骤3：求解Mx = 0
   // SVD分解M'M
   cvMulTransposed(M, &MtM, 1);
-  // 通过（svd分解）求解齐次最小二乘解得到相机坐标系下四个控制点：ut
+  // 通过（svd分解）求解齐次最小二乘解得到相机坐标系下四个不带尺度的控制点：ut
   // ut的每一行对应一组可能的解
   // 最小特征值对应的特征向量最接近待求的解，由于噪声和约束不足的问题，导致真正的解可能是多个特征向量的线性叠加
   cvSVD(&MtM, &D, &Ut, 0, CV_SVD_MODIFY_A | CV_SVD_U_T);//得到向量ut
