@@ -48,7 +48,7 @@ ORBmatcher::ORBmatcher(float nnratio, bool checkOri): mfNNratio(nnratio), mbChec
 }
 
 /**
- * @brief 对于每个局部3D点通过投影在小范围内找到和最匹配的2D点。从而实现Frame对Local MapPoint的跟踪
+ * @brief 对于每个局部3D点通过投影在小范围内找到和最匹配的2D点。从而实现Frame对Local MapPoint的跟踪。用于tracking过程中实现当前帧对局部3D点的跟踪。
  *
  * 将Local MapPoint投影到当前帧中, 由此增加当前帧的MapPoints \n
  * 在SearchLocalPoints()中已经将Local MapPoints重投影（isInFrustum()）到当前帧 \n
@@ -195,7 +195,7 @@ bool ORBmatcher::CheckDistEpipolarLine(const cv::KeyPoint &kp1,const cv::KeyPoin
 }
 
 /**
- * @brief 通过词包，对关键帧的特征点进行跟踪
+ * @brief 通过语法树加速关键帧与当前帧之间的特征点匹配
  * 
  * 通过bow对pKF和F中的特征点进行快速匹配（不属于同一node的特征点直接跳过匹配） \n
  * 对属于同一node的特征点通过描述子距离进行匹配 \n
@@ -479,6 +479,7 @@ int ORBmatcher::SearchByProjection(KeyFrame* pKF, cv::Mat Scw, const vector<MapP
     return nmatches;
 }
 
+// 初始化时假设F1和F2图像变化不大，在windowSize范围进行匹配，外部调用中windowSize = 100
 int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f> &vbPrevMatched, vector<int> &vnMatches12, int windowSize)
 {
     int nmatches=0;
@@ -598,7 +599,7 @@ int ORBmatcher::SearchForInitialization(Frame &F1, Frame &F2, vector<cv::Point2f
 }
 
 /**
- * @brief 通过词包，对关键帧的特征点进行跟踪，该函数用于闭环检测时两个关键帧间的特征点匹配
+ * @brief 通过语法树加速两个关键帧之间的特征匹配。该函数用于闭环检测时两个关键帧间的特征点匹配
  * 
  * 通过bow对pKF和F中的特征点进行快速匹配（不属于同一node的特征点直接跳过匹配） \n
  * 对属于同一node的特征点通过描述子距离进行匹配 \n
@@ -751,7 +752,7 @@ int ORBmatcher::SearchByBoW(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
 }
 
 /**
- * @brief 利用基本矩阵F12，在两个关键帧之间未匹配的特征点中产生新的3d点
+ * @brief 利用基本矩阵F12，在pKF1和pKF2之间找特征匹配。作用：当pKF1中特征点没有对应的3D点时，通过匹配的特征点产生新的3d点
  * 
  * @param pKF1          关键帧1
  * @param pKF2          关键帧2
@@ -768,12 +769,12 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
 
     // Compute epipole in second image
     // 计算KF1的相机中心在KF2图像平面的坐标，即极点坐标
-    cv::Mat Cw = pKF1->GetCameraCenter(); // twc1
+    cv::Mat Cw = pKF1->GetCameraCenter(); // tw2c1
     cv::Mat R2w = pKF2->GetRotation();    // Rc2w
     cv::Mat t2w = pKF2->GetTranslation(); // tc2w
     cv::Mat C2 = R2w*Cw+t2w; // tc2c1 KF1的相机中心在KF2坐标系的表示
     const float invz = 1.0f/C2.at<float>(2);
-    // 步骤0：得到KF1的相机光心在KF2中的坐标（极点坐标）
+    // 步骤0：得到KF1的相机光心在KF2中的坐标（KF1在KF2中的极点坐标）
     const float ex =pKF2->fx*C2.at<float>(0)*invz+pKF2->cx;
     const float ey =pKF2->fy*C2.at<float>(1)*invz+pKF2->cy;
 
@@ -816,13 +817,14 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                 MapPoint* pMP1 = pKF1->GetMapPoint(idx1);
                 
                 // If there is already a MapPoint skip
-                // 由于寻找的是未匹配的特征点，所以pMP1应该为NULL
+                // ！！！！！！由于寻找的是未匹配的特征点，所以pMP1应该为NULL
                 if(pMP1)
                     continue;
 
                 // 如果mvuRight中的值大于0，表示是双目，且该特征点有深度值
                 const bool bStereo1 = pKF1->mvuRight[idx1]>=0;
 
+                // 不考虑双目深度的有效性
                 if(bOnlyStereo)
                     if(!bStereo1)
                         continue;
@@ -873,7 +875,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
                     {
                         const float distex = ex-kp2.pt.x;
                         const float distey = ey-kp2.pt.y;
-                        // 该特征点距离极点太近，表明kp2对应的MapPoint距离pKF1相机太近
+                        // ！！！！该特征点距离极点太近，表明kp2对应的MapPoint距离pKF1相机太近
                         if(distex*distex+distey*distey<100*pKF2->mvScaleFactors[kp2.octave])
                             continue;
                     }
@@ -1499,7 +1501,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
 }
 
 /**
- * @brief 通过投影，对上一帧的特征点进行跟踪
+ * @brief 对上一帧每个3D点通过投影在小范围内找到和最匹配的2D点。从而实现当前帧CurrentFrame对上一帧LastFrame 3D点的匹配跟踪。用于tracking中前后帧跟踪
  *
  * 上一帧中包含了MapPoints，对这些MapPoints进行tracking，由此增加当前帧的MapPoints \n
  * 1. 将上一帧的MapPoints投影到当前帧(根据速度模型可以估计当前帧的Tcw)
@@ -1532,7 +1534,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
     // vector from LastFrame to CurrentFrame expressed in LastFrame
     const cv::Mat tlc = Rlw*twc+tlw; // Rlw*twc(w) = twc(l), twc(l) + tlw(l) = tlc(l)
 
-    // 判断前进还是后退
+    // 判断前进还是后退，并以此预测特征点在当前帧所在的金字塔层数
     const bool bForward = tlc.at<float>(2)>CurrentFrame.mb && !bMono; // 非单目情况，如果Z大于基线，则表示前进
     const bool bBackward = -tlc.at<float>(2)>CurrentFrame.mb && !bMono; // 非单目情况，如果Z小于基线，则表示前进
 
@@ -1666,6 +1668,7 @@ int ORBmatcher::SearchByProjection(Frame &CurrentFrame, const Frame &LastFrame, 
     return nmatches;
 }
 
+// 对当前帧每个3D点通过投影在小范围内找到和最匹配的2D点。从而实现当前帧CurrentFrame对关键帧3D点的匹配跟踪。用于重定位时特征点匹配
 int ORBmatcher::SearchByProjection(Frame &CurrentFrame, KeyFrame *pKF, const set<MapPoint*> &sAlreadyFound, const float th , const int ORBdist)
 {
     int nmatches = 0;
