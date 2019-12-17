@@ -625,7 +625,7 @@ void Tracking::Track()
 }
 
 /**
- * @brief 双目和rgbd的地图初始化
+ * @brief 双目和rgbd的地图初始化，由于stereo有深度图，可以单帧初始化
  *
  * 由于具有深度信息，直接生成MapPoints
  */
@@ -645,13 +645,15 @@ void Tracking::StereoInitialization()
         // KeyFrame里有一个mpKeyFrameDB，Tracking里有一个mpKeyFrameDB，而KeyFrame里的mpMap都指向Tracking里的这个mpKeyFrameDB
         KeyFrame* pKFini = new KeyFrame(mCurrentFrame,mpMap,mpKeyFrameDB);
 
+        // ！！！这里是不是缺少一个 pKFini->ComputeBoW();
+
         // Insert KeyFrame in the map
         // KeyFrame中包含了地图、反过来地图中也包含了KeyFrame，相互包含
         // 步骤3：在地图中添加该初始关键帧
         mpMap->AddKeyFrame(pKFini);
 
         // Create MapPoints and asscoiate to KeyFrame
-        // 步骤4：为每个特征点构造MapPoint
+        // 步骤4：通过stereo深度为每个特征点构造MapPoint
         for(int i=0; i<mCurrentFrame.N;i++)
         {
             float z = mCurrentFrame.mvDepth[i];
