@@ -961,7 +961,7 @@ int ORBmatcher::SearchForTriangulation(KeyFrame *pKF1, KeyFrame *pKF2, cv::Mat F
 }
 
 /**
- * @brief 将MapPoints投影到关键帧pKF中，并判断是否有重复的MapPoints
+ * @brief 将MapPoints投影（用关键帧的位姿）到关键帧pKF中，并判断是否有重复的MapPoints
  * 1.如果MapPoint能匹配关键帧的特征点，并且该点有对应的MapPoint，那么将两个MapPoint合并（选择观测数多的）
  * 2.如果MapPoint能匹配关键帧的特征点，并且该点没有对应的MapPoint，那么为该点添加MapPoint
  * @param  pKF         相邻关键帧
@@ -1124,7 +1124,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, const vector<MapPoint *> &vpMapPoints, const
     return nFused;
 }
 
-// 投影MapPoints到KeyFrame中，并判断是否有重复的MapPoints
+// 投影MapPoints（用Sim3: Scw参数）到KeyFrame中，并判断是否有重复的MapPoints
 // Scw为世界坐标系到pKF机体坐标系的Sim3变换，用于将世界坐标系下的vpPoints变换到机体坐标系
 int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoints, float th, vector<MapPoint *> &vpReplacePoint)
 {
