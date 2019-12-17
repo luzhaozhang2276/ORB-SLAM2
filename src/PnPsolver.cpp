@@ -80,7 +80,7 @@
 // step4:将step3中的12未知参数（4个控制点*3维参考点坐标）提成列向量
 // Mx = 0,计算得到初始的解x后可以用Gauss-Newton来提纯得到四个相机坐标系的控制点
 
-// step5:根据得到的p_w和对应的p_c，最小化重投影误差即可求解出R t
+// step5:根据得到的p_w和对应的p_c，svd-base icp求解即可获得R, t
 
 #include <iostream>
 
@@ -243,6 +243,7 @@ cv::Mat PnPsolver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInlie
         reset_correspondences();
 
         // 这个赋值稍微有些低效
+        // 每次迭代将所有的特征匹配复制一份mvAllIndices--->vAvailableIndices，然后选取mRansacMinSet个进行求解
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
@@ -1006,8 +1007,7 @@ void PnPsolver::compute_A_and_b_gauss_newton(const double * l_6x10, const double
     // A为6*4矩阵
     // 详细公式见：compute_L_6x10 函数中的注释
     // （dv00*B00 + 2*dv01*B01 + dv11*B11 + 2*dv02*B02 + 2*dv12*B12 + dv22*B22 + 2*dv03*B03 + 2*dv13*B13 + 2*dv23*B23 + dv33*B33）
-    // rowL: |dv00, 2*dv01, dv11, 2*dv02, 2*dv12, dv22, 2*dv03, 2*dv13, 2*dv23, dv33|
-    // wubo 这里雅克比求错了，不需要乘以2
+    // 对B0、B1、B2、B3求雅克比
     rowA[0] = 2 * rowL[0] * betas[0] +     rowL[1] * betas[1] +     rowL[3] * betas[2] +     rowL[6] * betas[3];  // 对B0求导
     rowA[1] =     rowL[1] * betas[0] + 2 * rowL[2] * betas[1] +     rowL[4] * betas[2] +     rowL[7] * betas[3];  // 对B1求导
     rowA[2] =     rowL[3] * betas[0] +     rowL[4] * betas[1] + 2 * rowL[5] * betas[2] +     rowL[8] * betas[3];  // 对B2求导

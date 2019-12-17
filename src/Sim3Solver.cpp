@@ -203,12 +203,14 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
             mBestTranslation = mt12i.clone();
             mBestScale = ms12i;
 
-            if(mnInliersi>mRansacMinInliers)// 只要计算得到一次合格的Sim变换，就直接返回
+            if(mnInliersi>mRansacMinInliers)
             {
                 nInliers = mnInliersi;
                 for(int i=0; i<N; i++)
                     if(mvbInliersi[i])
                         vbInliers[mvnIndices1[i]] = true;
+
+                // ！！！！！note: 1. 只要计算得到一次合格的Sim变换，就直接返回 2. 没有对所有的inlier进行一次refine操作
                 return mBestT12;
             }
         }
