@@ -188,6 +188,7 @@ void Initializer::FindHomography(vector<bool> &vbMatchesInliers, float &score, c
     // Perform all RANSAC iterations and save the solution with highest score
     for(int it=0; it<mMaxIterations; it++)
     {
+        // 这个应该最少4对匹配点就可以了
         // Select a minimum set
         for(size_t j=0; j<8; j++)
         {
@@ -959,7 +960,7 @@ void Initializer::Triangulate(const cv::KeyPoint &kp1, const cv::KeyPoint &kp2, 
 }
 
 /**
- * ＠brief 归一化特征点到同一尺度（作为normalize DLT的输入）
+ * ＠brief 将特征点（u,v,1）认为是3D点进一步投影到虚拟图像上，解决特征点分布不均匀的问题
  *
  * [x' y' 1]' = T * [x y 1]' \n
  * 归一化后x', y'的均值为0，sum(abs(x_i'-0))=1，sum(abs((y_i'-0))=1
