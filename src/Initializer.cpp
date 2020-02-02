@@ -725,6 +725,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
     // Motion and structure from motion in a piecewise planar environment.
     // International Journal of Pattern Recognition and Artificial Intelligence, 1988
 
+    // step1：SVD分解Homography
     // 因为特征点是图像坐标系，所以讲H矩阵由相机坐标系换算到图像坐标系
     cv::Mat invK = K.inv();
     cv::Mat A = invK*H21*K;
@@ -750,20 +751,23 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
     vt.reserve(8);
     vn.reserve(8);
 
-    //n'=[x1 0 x3] 4 posibilities e1=e3=1, e1=1 e3=-1, e1=-1 e3=1, e1=e3=-1
+    // step2：计算法向量
+    // n'=[x1 0 x3] 4 posibilities e1=e3=1, e1=1 e3=-1, e1=-1 e3=1, e1=e3=-1
     // 法向量n'= [x1 0 x3] 对应ppt的公式17
     float aux1 = sqrt((d1*d1-d2*d2)/(d1*d1-d3*d3));
     float aux3 = sqrt((d2*d2-d3*d3)/(d1*d1-d3*d3));
     float x1[] = {aux1,aux1,-aux1,-aux1};
     float x3[] = {aux3,-aux3,aux3,-aux3};
 
-    //case d'=d2
+    // step3：恢复旋转矩阵
+    // step3.1：计算 sin(theta)和cos(theta)，case d'=d2
     // 计算ppt中公式19
     float aux_stheta = sqrt((d1*d1-d2*d2)*(d2*d2-d3*d3))/((d1+d3)*d2);
 
     float ctheta = (d2*d2+d1*d3)/((d1+d3)*d2);
     float stheta[] = {aux_stheta, -aux_stheta, -aux_stheta, aux_stheta};
 
+    // step3.2：计算四种旋转矩阵R，t
     // 计算旋转矩阵 R‘，计算ppt中公式18
     //      | ctheta      0   -aux_stheta|       | aux1|
     // Rp = |    0        1       0      |  tp = |  0  |
@@ -813,13 +817,14 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
         vn.push_back(n);
     }
 
-    //case d'=-d2
+    // step3.3：计算 sin(theta)和cos(theta)，case d'=-d2
     // 计算ppt中公式22
     float aux_sphi = sqrt((d1*d1-d2*d2)*(d2*d2-d3*d3))/((d1-d3)*d2);
 
     float cphi = (d1*d3-d2*d2)/((d1-d3)*d2);
     float sphi[] = {aux_sphi, -aux_sphi, -aux_sphi, aux_sphi};
 
+    // step3.4：计算四种旋转矩阵R，t
     // 计算旋转矩阵 R‘，计算ppt中公式21
     for(int i=0; i<4; i++)
     {
@@ -863,7 +868,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
 
     // Instead of applying the visibility constraints proposed in the Faugeras' paper (which could fail for points seen with low parallax)
     // We reconstruct all hypotheses and check in terms of triangulated points and parallax
-    // d'=d2和d'=-d2分别对应8组(R t)
+    // step4：d'=d2和d'=-d2分别对应8组(R t)，通过恢复3D点并判断是否在相机正前方的方法来确定最优解
     for(size_t i=0; i<8; i++)
     {
         float parallaxi;
@@ -887,7 +892,7 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
         }
     }
 
-
+    // step5：通过判断最优是否明显好于次优，从而判断该次Homography分解是否成功
     if(secondBestGood<0.75*bestGood && bestParallax>=minParallax && bestGood>minTriangulated && bestGood>0.9*N)
     {
         vR[bestSolutionIdx].copyTo(R21);
@@ -900,7 +905,6 @@ bool Initializer::ReconstructH(vector<bool> &vbMatchesInliers, cv::Mat &H21, cv:
 
     return false;
 }
-
 
 // Trianularization: 已知匹配特征点对{x x'} 和 各自相机矩阵{P P'}, 估计三维点 X
 // x' = P'X  x = PX

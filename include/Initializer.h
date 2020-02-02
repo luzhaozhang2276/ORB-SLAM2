@@ -110,7 +110,6 @@ private:
 
     // Ransac sets
     vector<vector<size_t> > mvSets; ///< 二维容器，外层容器的大小为迭代次数，内层容器大小为每次迭代算H或F矩阵需要的点
-
 };
 
 } //namespace ORB_SLAM
