@@ -33,21 +33,28 @@
 namespace ORB_SLAM2
 {
 
+    /**
+     * @brief Sim3Solver 构造函数
+     * @param pKF1 :包含keypoints和对应的3D points
+     * @param pKF2
+     * @param vpMatched12 :3D points之间的匹配关系
+     * @param bFixScale :是否计算scale (0:scale=1.0)
+     */
 Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> &vpMatched12, const bool bFixScale):
     mnIterations(0), mnBestInliers(0), mbFixScale(bFixScale)
 {
-    mpKF1 = pKF1;
+    mpKF1 = pKF1;       // 成员变量:指向关键帧的指针
     mpKF2 = pKF2;
 
     vector<MapPoint*> vpKeyFrameMP1 = pKF1->GetMapPointMatches();
 
     mN1 = vpMatched12.size();
 
-    mvpMapPoints1.reserve(mN1);
+    mvpMapPoints1.reserve(mN1); // 已经匹配好,因此两对点的数目是相同的
     mvpMapPoints2.reserve(mN1);
     mvpMatches12 = vpMatched12;
     mvnIndices1.reserve(mN1);
-    mvX3Dc1.reserve(mN1);
+    mvX3Dc1.reserve(mN1);       // 相机坐标系下的mappoints
     mvX3Dc2.reserve(mN1);
 
     cv::Mat Rcw1 = pKF1->GetRotation();
@@ -59,7 +66,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
 
     size_t idx=0;
     // mN1为pKF2特征点的个数
-    for(int i1=0; i1<mN1; i1++)
+    for(int i1=0; i1<mN1; i1++)     // 外层遍历:PKF2特征点
     {
         // 如果该特征点在pKF1中有匹配
         if(vpMatched12[i1])
@@ -94,7 +101,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
             mvnMaxError1.push_back(9.210*sigmaSquare1);
             mvnMaxError2.push_back(9.210*sigmaSquare2);
 
-            // mvpMapPoints1和mvpMapPoints2是匹配的MapPoints容器
+            // step3: mvpMapPoints1和mvpMapPoints2是匹配的MapPoints容器
             mvpMapPoints1.push_back(pMP1);
             mvpMapPoints2.push_back(pMP2);
             mvnIndices1.push_back(i1);
@@ -122,6 +129,7 @@ Sim3Solver::Sim3Solver(KeyFrame *pKF1, KeyFrame *pKF2, const vector<MapPoint *> 
     SetRansacParameters();
 }
 
+/// RANSAC参数配置
 void Sim3Solver::SetRansacParameters(double probability, int minInliers, int maxIterations)
 {
     mRansacProb = probability;
@@ -148,6 +156,7 @@ void Sim3Solver::SetRansacParameters(double probability, int minInliers, int max
     mnIterations = 0;
 }
 
+/// 迭代函数(*)
 // Ransac求解mvX3Dc1和mvX3Dc2之间Sim3，函数返回mvX3Dc2到mvX3Dc1的Sim3变换
 cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInliers, int &nInliers)
 {

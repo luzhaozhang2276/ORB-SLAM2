@@ -63,6 +63,7 @@ int main(int argc, char **argv)
     }
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
+    // system构造函数,将所有线程启动
     ORB_SLAM2::System SLAM(argv[1],argv[2],ORB_SLAM2::System::RGBD,true);
 
     // Vector for tracking time statistics
@@ -74,6 +75,7 @@ int main(int argc, char **argv)
     cout << "Images in the sequence: " << nImages << endl << endl;
 
     // Main loop
+    // 循环遍历所有图像
     cv::Mat imRGB, imD;
     for(int ni=0; ni<nImages; ni++)
     {

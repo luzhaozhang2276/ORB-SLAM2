@@ -270,6 +270,7 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
 
 /**
  * @brief Pose Only Optimization
+ * only-pose BA
  * 
  * 3D-2D 最小化重投影误差 e = (u,v) - project(Tcw*Pw) \n
  * 只优化Frame的Tcw，不优化MapPoints的坐标
@@ -290,9 +291,9 @@ void Optimizer::BundleAdjustment(const vector<KeyFrame *> &vpKFs, const vector<M
  */
 int Optimizer::PoseOptimization(Frame *pFrame)
 {
-    // 该优化函数主要用于Tracking线程中：运动跟踪、参考帧跟踪、地图跟踪、重定位
+    //// 该优化函数主要用于Tracking线程中：运动跟踪、参考帧跟踪、地图跟踪、重定位
 
-    // 步骤1：构造g2o优化器
+    /// 步骤1：构造g2o优化器
     g2o::SparseOptimizer optimizer;
     g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
 
@@ -306,7 +307,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     int nInitialCorrespondences=0;
 
     // Set Frame vertex
-    // 步骤2：添加顶点：待优化当前帧的Tcw
+    /// 步骤2：添加顶点：待优化当前帧的Tcw
     g2o::VertexSE3Expmap * vSE3 = new g2o::VertexSE3Expmap();
     vSE3->setEstimate(Converter::toSE3Quat(pFrame->mTcw));
     vSE3->setId(0);
@@ -331,7 +332,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
     const float deltaMono = sqrt(5.991);
     const float deltaStereo = sqrt(7.815);
 
-    // 步骤3：添加一元边：相机投影模型
+    /// 步骤3：添加一元边：相机投影模型
     {
     unique_lock<mutex> lock(MapPoint::mGlobalMutex);
 
@@ -425,7 +426,7 @@ int Optimizer::PoseOptimization(Frame *pFrame)
 
     // We perform 4 optimizations, after each optimization we classify observation as inlier/outlier
     // At the next optimization, outliers are not included, but at the end they can be classified as inliers again.
-    // 步骤4：开始优化，总共优化四次，每次优化后，将观测分为outlier和inlier，outlier不参与下次优化
+    /// 步骤4：开始优化，总共优化四次，每次优化后，将观测分为outlier和inlier，outlier不参与下次优化
     // 由于每次优化后是对所有的观测进行outlier和inlier判别，因此之前被判别为outlier有可能变成inlier，反之亦然
     // 基于卡方检验计算出的阈值（假设测量有一个像素的偏差）
     const float chi2Mono[4]={5.991,5.991,5.991,5.991};

@@ -68,7 +68,7 @@ protected:
     std::set<MapPoint*> mspMapPoints; ///< MapPoints
     std::set<KeyFrame*> mspKeyFrames; ///< Keyframs
 
-    std::vector<MapPoint*> mvpReferenceMapPoints;
+    std::vector<MapPoint*> mvpReferenceMapPoints;   // 用于可视化?
 
     long unsigned int mnMaxKFid;
 

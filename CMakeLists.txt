@@ -17,7 +17,7 @@ endif( CMAKE_BUILD_TYPE MATCHES "Debug" )
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(OpenCV 2.4.10 REQUIRED)
+find_package(OpenCV 3.0 QUIET)
 find_package(Eigen3 REQUIRED)
 find_package(Pangolin REQUIRED)
 
@@ -62,6 +62,9 @@ ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
 
 add_executable(mono_kitti Examples/Monocular/mono_kitti.cc)
 target_link_libraries(mono_kitti ${PROJECT_NAME})
+
+add_executable(mono_euroc Examples/Monocular/mono_euroc.cc)
+target_link_libraries(mono_euroc ${PROJECT_NAME})
 
 add_executable(stereo_kitti Examples/Stereo/stereo_kitti.cpp)
 target_link_libraries(stereo_kitti ${PROJECT_NAME})
