@@ -371,7 +371,7 @@ void Tracking::Track()
                 CheckReplacedInLastFrame();
 
                 /// 步骤2.1：跟踪上一帧或者参考帧或者重定位
-                // 此处为跟踪上一帧
+                // 这个if里包含了三种情况(上一帧,参考帧,重定位)
 
                 // 运动模型是空的或刚完成重定位
                 // mCurrentFrame.mnId<mnLastRelocFrameId+2这个判断不应该有
@@ -386,7 +386,7 @@ void Tracking::Track()
                     // (课件中:将上一帧与当前帧进行BoW匹配,这样的表述是不对的)
                     // (此处应为:当前帧与参考关键帧之间的匹配,且将当前帧位姿设为上一帧位姿,以获得较好的优化初值)
                     bOK = TrackReferenceKeyFrame();
-                    // TODO: VO中当前帧只与参考关键帧(关键帧)进行跟踪,不对上一帧进行跟踪???
+                    // TO DO: VO中当前帧只与参考关键帧(关键帧)进行跟踪,不对上一帧进行跟踪???  TrackWithMotionModel 对上一帧进行跟踪
                 }
                 else
                 {
@@ -403,7 +403,7 @@ void Tracking::Track()
             else    // 跟丢? 进行重定位
             {
                 // BOW搜索，PnP求解位姿
-                bOK = Relocalization();
+                bOK = Relocalization();     // 进行重定位,并返回标志位
             }
         }
         else
@@ -412,12 +412,12 @@ void Tracking::Track()
             // 只进行跟踪tracking，局部地图不工作
  
             /// 步骤2.1：跟踪上一帧或者参考帧或者重定位
-            // 此处为重定位
+            // 这个else中是Localization Mode中的,同样也包含三种情况(上一帧,参考帧,重定位)
 
             // tracking跟丢了
             if(mState==LOST)
             {
-                bOK = Relocalization();
+                bOK = Relocalization();     // 重定位
             }
             else
             {
@@ -431,17 +431,17 @@ void Tracking::Track()
 
                     if(!mVelocity.empty())
                     {
-                        bOK = TrackWithMotionModel();
+                        bOK = TrackWithMotionModel();   // 上一帧
                         // 这个地方是不是应该加上：
                         // if(!bOK)
                         //    bOK = TrackReferenceKeyFrame();
                     }
                     else
                     {
-                        bOK = TrackReferenceKeyFrame();
+                        bOK = TrackReferenceKeyFrame(); // 参考帧
                     }
                 }
-                else            // 跟踪数目太少
+                else            // 跟踪数目太少       既跟踪又定位
                 {
                     // In last frame we tracked mainly "visual odometry" points.
 
@@ -507,13 +507,13 @@ void Tracking::Track()
         // local map:当前帧、当前帧的MapPoints、当前关键帧与其它关键帧共视关系
         // 在步骤2.1中主要是两两跟踪（恒速模型跟踪上一帧、跟踪参考帧），这里搜索局部关键帧后搜集所有局部MapPoints，
         // 然后将局部MapPoints和当前帧进行投影匹配，得到更多匹配的MapPoints后进行Pose优化
-        if(!mbOnlyTracking)
+        if(!mbOnlyTracking)     // 正常跟踪模式(具有局部地图)
         {
             if(bOK)
                 bOK = TrackLocalMap();
         }
-        else
-        {
+        else    // Localization Mode : 只有重定位成功后,才进行局部地图跟踪
+        {       // TODO :该模式中,"局部地图不工作"指的是不进行更新??? 下边的LocalMap是原地图中的信息???
             // mbVO true means that there are few matches to MapPoints in the map. We cannot retrieve
             // a local map and therefore we do not perform TrackLocalMap(). Once the system relocalizes
             // the camera we will use the local map again.
@@ -1594,7 +1594,7 @@ void Tracking::UpdateLocalMap()
 {
     // This is for visualization
     // 这行程序放在UpdateLocalPoints函数后面是不是好一些
-    mpMap->SetReferenceMapPoints(mvpLocalMapPoints);
+    mpMap->SetReferenceMapPoints(mvpLocalMapPoints);        // 用于可视化操作
 
     // Update
     // 更新局部关键帧和局部MapPoints
@@ -1644,19 +1644,21 @@ void Tracking::UpdateLocalPoints()
 void Tracking::UpdateLocalKeyFrames()
 {
     // Each map point vote for the keyframes in which it has been observed
-    // 步骤1：遍历当前帧的MapPoints，记录所有能观测到当前帧MapPoints的关键帧
+    /// 步骤1：遍历当前帧的MapPoints，记录所有能观测到当前帧MapPoints的关键帧
     map<KeyFrame*,int> keyframeCounter;
-    for(int i=0; i<mCurrentFrame.N; i++)
+    for(int i=0; i<mCurrentFrame.N; i++)    // 遍历次数为当前帧的MapPoints数量
     {
-        if(mCurrentFrame.mvpMapPoints[i])
+        if(mCurrentFrame.mvpMapPoints[i])   // 遍历当前帧的MapPoints
         {
-            MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
-            if(!pMP->isBad())
+            MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];  // 取出3D点
+            if(!pMP->isBad())   // 不是坏点
             {
-                // 能观测到当前帧MapPoints的关键帧
+                // 遍历能观测到当前帧MapPoints的关键帧
                 const map<KeyFrame*,size_t> observations = pMP->GetObservations();
-                for(map<KeyFrame*,size_t>::const_iterator it=observations.begin(), itend=observations.end(); it!=itend; it++)
-                    keyframeCounter[it->first]++;
+                for(map<KeyFrame*,size_t>::const_iterator it=observations.begin(),
+                        itend=observations.end();
+                        it!=itend; it++)
+                    keyframeCounter[it->first]++;   // first对应的是KeyFrame指针
             }
             else
             {
@@ -1671,14 +1673,15 @@ void Tracking::UpdateLocalKeyFrames()
     int max=0;
     KeyFrame* pKFmax= static_cast<KeyFrame*>(NULL);
 
-    // 步骤2：更新局部关键帧（mvpLocalKeyFrames），添加局部关键帧有三个策略
+    /// 步骤2：更新局部关键帧（mvpLocalKeyFrames），添加局部关键帧有三个策略
     // 先清空局部关键帧
     mvpLocalKeyFrames.clear();
     mvpLocalKeyFrames.reserve(3*keyframeCounter.size());
 
     // All keyframes that observe a map point are included in the local map. Also check which keyframe shares most points
     // V-D K1: shares the map points with current frame
-    // 策略1：能观测到当前帧MapPoints的关键帧作为局部关键帧
+    /// 策略1：能观测到当前帧MapPoints的关键帧作为局部关键帧
+    // 遍历所有能观测到当前帧MapPoints的关键帧,添加到局部关键帧mvpLocalKeyFrames中
     for(map<KeyFrame*,int>::const_iterator it=keyframeCounter.begin(), itEnd=keyframeCounter.end(); it!=itEnd; it++)
     {
         KeyFrame* pKF = it->first;
@@ -1686,7 +1689,7 @@ void Tracking::UpdateLocalKeyFrames()
         if(pKF->isBad())
             continue;
 
-        if(it->second>max)
+        if(it->second>max)      // todo: map->second对应的是索引值,求取max的意义???
         {
             max=it->second;
             pKFmax=pKF;
@@ -1700,17 +1703,19 @@ void Tracking::UpdateLocalKeyFrames()
 
     // Include also some not-already-included keyframes that are neighbors to already-included keyframes
     // V-D K2: neighbors to K1 in the covisibility graph
-    // 策略2：与策略1得到的局部关键帧共视程度很高的关键帧作为局部关键帧
+    /// 策略2：与策略1得到的局部关键帧共视程度很高的关键帧作为局部关键帧
+    // 共视程度高的前10帧 + 子关键帧 + 父关键帧
+    // 遍历策略一中的局部关键帧
     for(vector<KeyFrame*>::const_iterator itKF=mvpLocalKeyFrames.begin(), itEndKF=mvpLocalKeyFrames.end(); itKF!=itEndKF; itKF++)
     {
-        // Limit the number of keyframes
+        // Limit the number of keyframes        策略一中据局部关键帧的数量不能过高
         if(mvpLocalKeyFrames.size()>80)
             break;
 
         KeyFrame* pKF = *itKF;
 
-        // 策略2.1:最佳共视的10帧
-        const vector<KeyFrame*> vNeighs = pKF->GetBestCovisibilityKeyFrames(10);
+        /// 策略2.1:最佳共视的10帧
+        const vector<KeyFrame*> vNeighs = pKF->GetBestCovisibilityKeyFrames(10);    // 仅获取,此处并不进行计算(降序集合)
         for(vector<KeyFrame*>::const_iterator itNeighKF=vNeighs.begin(), itEndNeighKF=vNeighs.end(); itNeighKF!=itEndNeighKF; itNeighKF++)
         {
             KeyFrame* pNeighKF = *itNeighKF;
@@ -1726,7 +1731,7 @@ void Tracking::UpdateLocalKeyFrames()
             }
         }
 
-        // 策略2.2:自己的子关键帧
+        /// 策略2.2:自己的子关键帧
         const set<KeyFrame*> spChilds = pKF->GetChilds();
         for(set<KeyFrame*>::const_iterator sit=spChilds.begin(), send=spChilds.end(); sit!=send; sit++)
         {
@@ -1742,7 +1747,7 @@ void Tracking::UpdateLocalKeyFrames()
             }
         }
 
-        // 策略2.3:自己的父关键帧
+        /// 策略2.3:自己的父关键帧
         KeyFrame* pParent = pKF->GetParent();
         if(pParent)
         {
@@ -1758,7 +1763,7 @@ void Tracking::UpdateLocalKeyFrames()
     }
 
     // V-D Kref： shares the most map points with current frame
-    // 步骤3：更新当前帧的参考关键帧，与自己共视程度最高的关键帧作为参考关键帧
+    /// 步骤3：更新当前帧的参考关键帧，与自己共视程度最高的关键帧作为参考关键帧
     if(pKFmax)
     {
         mpReferenceKF = pKFmax;
