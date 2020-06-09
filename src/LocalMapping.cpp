@@ -54,7 +54,7 @@ void LocalMapping::Run()
         // Tracking will see that Local Mapping is busy
         // 告诉Tracking，LocalMapping正处于繁忙状态，
         // LocalMapping线程处理的关键帧都是Tracking线程发过的
-        // 在LocalMapping线程还没有处理完关键帧之前Tracking线程最好不要发送太快
+        // 在LocalMapping线程还没有处理完关键帧之前Tracking线程最好不要发送太快     怎么操作???
         SetAcceptKeyFrames(false);
 
         // Check if there are keyframes in the queue
@@ -62,17 +62,17 @@ void LocalMapping::Run()
         if(CheckNewKeyFrames())
         {
             // BoW conversion and insertion in Map
-            // VI-A keyframe insertion
+            /// VI-A keyframe insertion
             // 计算关键帧特征点的BoW映射，将关键帧插入地图
             ProcessNewKeyFrame();
 
             // Check recent MapPoints
-            // VI-B recent map points culling
+            /// VI-B recent map points culling
             // 剔除ProcessNewKeyFrame函数中引入的不合格MapPoints
             MapPointCulling();
 
             // Triangulate new MapPoints
-            // VI-C new map points creation
+            /// VI-C new map points creation
             // 相机运动过程中与相邻关键帧通过三角化恢复出一些MapPoints
             CreateNewMapPoints();
 
@@ -89,12 +89,12 @@ void LocalMapping::Run()
             // 已经处理完队列中的最后的一个关键帧，并且闭环检测没有请求停止LocalMapping
             if(!CheckNewKeyFrames() && !stopRequested())
             {
-                // VI-D Local BA
+                /// VI-D Local BA
                 if(mpMap->KeyFramesInMap()>2)
                     Optimizer::LocalBundleAdjustment(mpCurrentKeyFrame,&mbAbortBA, mpMap);
 
                 // Check redundant local Keyframes
-                // VI-E local keyframes culling
+                /// VI-E local keyframes culling
                 // 检测并剔除当前帧相邻的关键帧中冗余的关键帧
                 // 剔除的标准是：该关键帧的90%的MapPoints可以被其它关键帧观测到
                 // trick! 
@@ -170,8 +170,9 @@ bool LocalMapping::CheckNewKeyFrames()
  */
 void LocalMapping::ProcessNewKeyFrame()
 {
-    // 步骤1：从缓冲队列中取出一帧关键帧
+    /// 步骤1：从缓冲队列中取出一帧关键帧
     // Tracking线程向LocalMapping中插入关键帧存在该队列中
+    // 多线程编程mutex 缓冲队列
     {
         unique_lock<mutex> lock(mMutexNewKFs);
         // 从列表中获得一个等待被插入的关键帧
@@ -180,25 +181,27 @@ void LocalMapping::ProcessNewKeyFrame()
     }
 
     // Compute Bags of Words structures
-    // 步骤2：计算该关键帧特征点的Bow映射关系
+    /// 步骤2：计算该关键帧特征点的Bow映射关系
     mpCurrentKeyFrame->ComputeBoW();
 
     // Associate MapPoints to the new keyframe and update normal and descriptor
-    // 步骤3：跟踪局部地图过程中新匹配上的MapPoints和当前关键帧绑定
+    /// 步骤3：跟踪局部地图过程中新匹配上的MapPoints和当前关键帧绑定
     // 在TrackLocalMap函数中将局部地图中的MapPoints与当前帧进行了匹配，
     // 但没有对这些匹配上的MapPoints与当前帧进行关联
+    // 获取当前关键帧对应的MapPoints
     const vector<MapPoint*> vpMapPointMatches = mpCurrentKeyFrame->GetMapPointMatches();
 
-    for(size_t i=0; i<vpMapPointMatches.size(); i++)
+    for(size_t i=0; i<vpMapPointMatches.size(); i++)    // 遍历当前关键帧对应的MapPoints
     {
         MapPoint* pMP = vpMapPointMatches[i];
         if(pMP)
         {
             if(!pMP->isBad())
             {
-                // 非当前帧生成的MapPoints
+                // 非当前帧生成的MapPoints (当前帧产生的MapPoints已经在Tracking中完成了关联)
 				// 为当前帧在tracking过程跟踪到的MapPoints更新属性
-                if(!pMP->IsInKeyFrame(mpCurrentKeyFrame))
+				// 前边所说的TrackLocalMap中匹配上的MapPoints只保存在Frame中,但为进行关联;在此处才进行关联(主要为添加观测)
+                if(!pMP->IsInKeyFrame(mpCurrentKeyFrame))   // check MapPoint is in keyframe
                 {
                     // 添加观测
                     pMP->AddObservation(mpCurrentKeyFrame, i);
@@ -208,7 +211,7 @@ void LocalMapping::ProcessNewKeyFrame()
                     pMP->ComputeDistinctiveDescriptors();
                 }
                 else // this can only happen for new stereo points inserted by the Tracking
-                {
+                {   // 单目不会进入这个分支(因为不会增加临时的MapPoints)
                     // 当前帧生成的MapPoints
                     // 将双目或RGBD跟踪过程中新插入的MapPoints放入mlpRecentAddedMapPoints，等待检查
                     // CreateNewMapPoints函数中通过三角化也会生成MapPoints
@@ -220,11 +223,12 @@ void LocalMapping::ProcessNewKeyFrame()
     }    
 
     // Update links in the Covisibility Graph
-    // 步骤4：更新关键帧间的连接关系，Covisibility图和Essential图(tree)
+    /// 步骤4：更新关键帧间的连接关系，Covisibility图和Essential图(tree)
     mpCurrentKeyFrame->UpdateConnections();
 
     // Insert Keyframe in Map
-    // 步骤5：将该关键帧插入到地图中
+    /// 步骤5：将该关键帧插入到地图中
+    // todo : 局部地图 or 全局地图 ???
     mpMap->AddKeyFrame(mpCurrentKeyFrame);
 }
 

@@ -66,7 +66,7 @@ public:
 
 protected:
     std::set<MapPoint*> mspMapPoints; ///< MapPoints
-    std::set<KeyFrame*> mspKeyFrames; ///< Keyframs
+    std::set<KeyFrame*> mspKeyFrames; ///< Keyframes
 
     std::vector<MapPoint*> mvpReferenceMapPoints;   // 用于可视化?
 

@@ -370,7 +370,7 @@ void KeyFrame::UpdateConnections()
 {
     // 在没有执行这个函数前，关键帧只和MapPoints之间有连接关系，这个函数可以更新关键帧之间的连接关系
 
-    //===============1==================================
+    ///===============1==================================
     map<KeyFrame*,int> KFcounter; // 关键帧-权重，权重为其它关键帧与当前关键帧共视3d点的个数
 
     vector<MapPoint*> vpMP;
@@ -411,7 +411,7 @@ void KeyFrame::UpdateConnections()
     if(KFcounter.empty())
         return;
 
-    //===============2==================================
+    ///===============2==================================
     // If the counter is greater than threshold add connection
     // In case no keyframe counter is over threshold add the one with maximum counter
     int nmax=0;
@@ -460,7 +460,7 @@ void KeyFrame::UpdateConnections()
         lWs.push_front(vPairs[i].first);
     }
 
-    //===============3==================================
+    ///===============3==================================
     {
         unique_lock<mutex> lockCon(mMutexConnections);
 
