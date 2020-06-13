@@ -370,7 +370,14 @@ void KeyFrame::UpdateConnections()
 {
     // 在没有执行这个函数前，关键帧只和MapPoints之间有连接关系，这个函数可以更新关键帧之间的连接关系
 
-    ///===============1==================================
+    /**
+     *  相关容器
+     *      1. map<KeyFrame*,int> KFcounter             记录每个3D点的共视关键帧数量
+     *      2. vector<pair<int,KeyFrame*> > vPairs      筛选后的共视关键帧
+     */
+
+    /// ===============1==================================
+    /// 统计当前关键帧的每个MapPoint各有多少个可被观测到的关键帧 (只统计每个3D点的共视关键帧数量)
     map<KeyFrame*,int> KFcounter; // 关键帧-权重，权重为其它关键帧与当前关键帧共视3d点的个数
 
     vector<MapPoint*> vpMP;
@@ -384,8 +391,8 @@ void KeyFrame::UpdateConnections()
     //For all map points in keyframe check in which other keyframes are they seen
     //Increase counter for those keyframes
     // 通过3D点间接统计可以观测到这些3D点的所有关键帧之间的共视程度
-    // 即统计每一个关键帧都有多少关键帧与它存在共视关系，统计结果放在KFcounter
-    for(vector<MapPoint*>::iterator vit=vpMP.begin(), vend=vpMP.end(); vit!=vend; vit++)
+    // 即统计每一个关键帧都有多少关键帧与它存在共视关系，统计结果放在KFcounter     只统计了个数???
+    for(vector<MapPoint*>::iterator vit=vpMP.begin(), vend=vpMP.end(); vit!=vend; vit++)    // 遍历MapPoints
     {
         MapPoint* pMP = *vit;
 
@@ -396,8 +403,9 @@ void KeyFrame::UpdateConnections()
             continue;
 
         // 对于每一个MapPoint点，observations记录了可以观测到该MapPoint的所有关键帧
-        map<KeyFrame*,size_t> observations = pMP->GetObservations();
+        map<KeyFrame*,size_t> observations = pMP->GetObservations();    // 获取每个MapPoint的观测信息(关键帧)
 
+        // 计数(当前MapPoint有多少个能够被观测到的KeyFrames)
         for(map<KeyFrame*,size_t>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
         {
             // 除去自身，自己与自己不算共视
@@ -411,7 +419,10 @@ void KeyFrame::UpdateConnections()
     if(KFcounter.empty())
         return;
 
-    ///===============2==================================
+    /// ===============2==================================
+    /// 遍历步骤一的共视关键帧,保存共视程度(3D点数目)超过阈值的共视关键帧,否则,只保存共视3D点最大的共视关键帧
+    /// 保存共视关键帧的同时,进行数据关联(添加边-权重)
+    /// 最后对筛选后的共视关键帧进行排序(降序)
     // If the counter is greater than threshold add connection
     // In case no keyframe counter is over threshold add the one with maximum counter
     int nmax=0;
@@ -422,7 +433,7 @@ void KeyFrame::UpdateConnections()
     // pair<int,KeyFrame*>将关键帧的权重写在前面，关键帧写在后面方便后面排序
     vector<pair<int,KeyFrame*> > vPairs;
     vPairs.reserve(KFcounter.size());
-    for(map<KeyFrame*,int>::iterator mit=KFcounter.begin(), mend=KFcounter.end(); mit!=mend; mit++)
+    for(map<KeyFrame*,int>::iterator mit=KFcounter.begin(), mend=KFcounter.end(); mit!=mend; mit++) // 遍历步骤一的统计个数
     {
         if(mit->second>nmax)
         {
@@ -460,12 +471,13 @@ void KeyFrame::UpdateConnections()
         lWs.push_front(vPairs[i].first);
     }
 
-    ///===============3==================================
+    /// ===============3==================================
+    /// 更新当前关键帧的共视图(covisibility graph),并更新生成树(spanning tree)的连接
     {
         unique_lock<mutex> lockCon(mMutexConnections);
 
         // mspConnectedKeyFrames = spConnectedKeyFrames;
-        // 更新图的连接(权重)
+        // 更新图的连接(权重)   更新当前关键帧的共视图
         mConnectedKeyFrameWeights = KFcounter;//更新该KeyFrame的mConnectedKeyFrameWeights，更新当前帧与其它关键帧的连接权重
         mvpOrderedConnectedKeyFrames = vector<KeyFrame*>(lKFs.begin(),lKFs.end());
         mvOrderedWeights = vector<int>(lWs.begin(), lWs.end());

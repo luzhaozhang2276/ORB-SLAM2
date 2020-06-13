@@ -69,6 +69,7 @@ void LocalMapping::Run()
             // Check recent MapPoints
             /// VI-B recent map points culling
             // 剔除ProcessNewKeyFrame函数中引入的不合格MapPoints
+            // 为什么MapPointCulling()要放在CreateNewMapPoints()之前???
             MapPointCulling();
 
             // Triangulate new MapPoints
@@ -228,13 +229,19 @@ void LocalMapping::ProcessNewKeyFrame()
 
     // Insert Keyframe in Map
     /// 步骤5：将该关键帧插入到地图中
-    // todo : 局部地图 or 全局地图 ???
+    // to do : 局部地图 or 全局地图 ???     全局地图
     mpMap->AddKeyFrame(mpCurrentKeyFrame);
 }
 
 /**
  * @brief 剔除ProcessNewKeyFrame和CreateNewMapPoints函数中引入的质量不好的MapPoints
  * @see VI-B recent map points culling
+ * 剔除情况:
+ *      1. 已经是坏点
+ *      2. 该MapPoint跟踪到的KeyFrame比预计的KeyFrame数量少于25%
+ *      3. 该MapPoint存在时长不少于两帧,且能被观测到的KeyFrame数目少于等于3帧(单目2帧)
+ *
+ * 若连续3帧(以上)仍未被剔除,则认为该点是高质量的点,永久保存,不再进行剔除检测
  */
 void LocalMapping::MapPointCulling()
 {
@@ -255,12 +262,12 @@ void LocalMapping::MapPointCulling()
         MapPoint* pMP = *lit;
         if(pMP->isBad())
         {
-            // 步骤1：已经是坏点的MapPoints直接从检查链表中删除
+            /// 步骤1：已经是坏点的MapPoints直接从检查链表中删除
             lit = mlpRecentAddedMapPoints.erase(lit);
         }
         else if(pMP->GetFoundRatio()<0.25f)
         {
-            // 步骤2：将不满足VI-B条件的MapPoint剔除
+            /// 步骤2：将不满足VI-B条件1的MapPoint剔除
             // VI-B 条件1：
             // 跟踪到该MapPoint的Frame数相比预计可观测到该MapPoint的Frame数的比例需大于25%
             // IncreaseFound / IncreaseVisible < 25%，注意不一定是关键帧。
@@ -269,14 +276,14 @@ void LocalMapping::MapPointCulling()
         }
         else if(((int)nCurrentKFid-(int)pMP->mnFirstKFid)>=2 && pMP->Observations()<=cnThObs)
         {
-            // 步骤3：将不满足VI-B条件的MapPoint剔除
+            /// 步骤3：将不满足VI-B条件2的MapPoint剔除
             // VI-B 条件2：从该点建立开始，到现在已经过了不小于2个关键帧
             // 但是观测到该点的关键帧数却不超过cnThObs帧，那么该点检验不合格
             pMP->SetBadFlag();
             lit = mlpRecentAddedMapPoints.erase(lit);
         }
         else if(((int)nCurrentKFid-(int)pMP->mnFirstKFid)>=3)
-            // 步骤4：从建立该点开始，已经过了3个关键帧而没有被剔除，则认为是质量高的点
+            /// 步骤4：从建立该点开始，已经过了3个关键帧而没有被剔除，则认为是质量高的点
             // 因此没有SetBadFlag()，仅从队列中删除，放弃继续对该MapPoint的检测
             lit = mlpRecentAddedMapPoints.erase(lit);
         else
@@ -293,7 +300,7 @@ void LocalMapping::CreateNewMapPoints()
     int nn = 10;
     if(mbMonocular)
         nn=20;
-    // 步骤1：在当前关键帧的共视关键帧中找到共视程度最高的nn帧相邻帧vpNeighKFs
+    /// 步骤1：在当前关键帧的共视关键帧中找到共视程度最高的nn帧相邻帧vpNeighKFs
     const vector<KeyFrame*> vpNeighKFs = mpCurrentKeyFrame->GetBestCovisibilityKeyFrames(nn);
 
     ORBmatcher matcher(0.6,false);
@@ -320,7 +327,7 @@ void LocalMapping::CreateNewMapPoints()
     int nnew=0;
 
     // Search matches with epipolar restriction and triangulate
-    // 步骤2：遍历相邻关键帧vpNeighKFs
+    /// 步骤2：遍历相邻关键帧vpNeighKFs
     for(size_t i=0; i<vpNeighKFs.size(); i++)
     {
         if(i>0 && CheckNewKeyFrames())
@@ -336,7 +343,7 @@ void LocalMapping::CreateNewMapPoints()
         // 基线长度
         const float baseline = cv::norm(vBaseline);
 
-        // 步骤3：判断相机运动的基线是不是足够长
+        /// 步骤3：判断相机运动的基线是不是足够长
         if(!mbMonocular)
         {
             // 如果是立体相机，关键帧间距太小时不生成3D点
@@ -355,11 +362,11 @@ void LocalMapping::CreateNewMapPoints()
         }
 
         // Compute Fundamental Matrix
-        // 步骤4：根据两个关键帧的位姿计算它们之间的基本矩阵
+        /// 步骤4：根据两个关键帧的位姿计算它们之间的基本矩阵
         cv::Mat F12 = ComputeF12(mpCurrentKeyFrame,pKF2);
 
         // Search matches that fullfil epipolar constraint
-        // 步骤5：通过极线约束限制匹配时的搜索范围，进行特征点匹配
+        /// 步骤5：通过极线约束限制匹配时的搜索范围，进行特征点匹配
         vector<pair<size_t,size_t> > vMatchedIndices;
         matcher.SearchForTriangulation(mpCurrentKeyFrame,pKF2,F12,vMatchedIndices,false);
 
@@ -378,11 +385,11 @@ void LocalMapping::CreateNewMapPoints()
         const float &invfy2 = pKF2->invfy;
 
         // Triangulate each match
-        // 步骤6：对每对匹配通过三角化生成3D点,he Triangulate函数差不多
+        /// 步骤6：对每对匹配通过三角化生成3D点,he Triangulate函数差不多
         const int nmatches = vMatchedIndices.size();
         for(int ikp=0; ikp<nmatches; ikp++)
         {
-            // 步骤6.1：取出匹配特征点
+            /// 步骤6.1：取出匹配特征点
 
             // 当前匹配对在当前关键帧中的索引
             const int &idx1 = vMatchedIndices[ikp].first;
@@ -403,7 +410,7 @@ void LocalMapping::CreateNewMapPoints()
             bool bStereo2 = kp2_ur>=0;
 
             // Check parallax between rays
-            // 步骤6.2：利用匹配点反投影得到视差角
+            /// 步骤6.2：利用匹配点反投影得到视差角
             // 特征点反投影
             cv::Mat xn1 = (cv::Mat_<float>(3,1) << (kp1.pt.x-cx1)*invfx1, (kp1.pt.y-cy1)*invfy1, 1.0);
             cv::Mat xn2 = (cv::Mat_<float>(3,1) << (kp2.pt.x-cx2)*invfx2, (kp2.pt.y-cy2)*invfy2, 1.0);
@@ -418,7 +425,7 @@ void LocalMapping::CreateNewMapPoints()
             float cosParallaxStereo1 = cosParallaxStereo;
             float cosParallaxStereo2 = cosParallaxStereo;
 
-            // 步骤6.3：对于双目，利用双目得到视差角
+            /// 步骤6.3：对于双目，利用双目得到视差角
             if(bStereo1)//双目，且有深度
                 cosParallaxStereo1 = cos(2*atan2(mpCurrentKeyFrame->mb/2,mpCurrentKeyFrame->mvDepth[idx1]));
             else if(bStereo2)//双目，且有深度
@@ -427,7 +434,7 @@ void LocalMapping::CreateNewMapPoints()
             // 得到双目观测的视差角
             cosParallaxStereo = min(cosParallaxStereo1,cosParallaxStereo2);
 
-            // 步骤6.4：三角化恢复3D点
+            /// 步骤6.4：三角化恢复3D点
             cv::Mat x3D;
             // cosParallaxRays>0 && (bStereo1 || bStereo2 || cosParallaxRays<0.9998)表明视差角正常
             // cosParallaxRays<cosParallaxStereo表明视差角很小
@@ -467,7 +474,7 @@ void LocalMapping::CreateNewMapPoints()
             cv::Mat x3Dt = x3D.t();
 
             //Check triangulation in front of cameras
-            // 步骤6.5：检测生成的3D点是否在相机前方
+            /// 步骤6.5：检测生成的3D点是否在相机前方
             float z1 = Rcw1.row(2).dot(x3Dt)+tcw1.at<float>(2);
             if(z1<=0)
                 continue;
@@ -477,7 +484,7 @@ void LocalMapping::CreateNewMapPoints()
                 continue;
 
             //Check reprojection error in first keyframe
-            // 步骤6.6：计算3D点在当前关键帧下的重投影误差
+            /// 步骤6.6：计算3D点在当前关键帧下的重投影误差
             const float &sigmaSquare1 = mpCurrentKeyFrame->mvLevelSigma2[kp1.octave];
             const float x1 = Rcw1.row(0).dot(x3Dt)+tcw1.at<float>(0);
             const float y1 = Rcw1.row(1).dot(x3Dt)+tcw1.at<float>(1);
@@ -534,7 +541,7 @@ void LocalMapping::CreateNewMapPoints()
             }
 
             //Check scale consistency
-            // 步骤6.7：检查尺度连续性
+            /// 步骤6.7：检查尺度连续性
 
             // 世界坐标系下，3D点与相机间的向量，方向由相机指向3D点
             cv::Mat normal1 = x3D-Ow1;
@@ -558,10 +565,10 @@ void LocalMapping::CreateNewMapPoints()
                 continue;
 
             // Triangulation is succesfull
-            // 步骤6.8：三角化生成3D点成功，构造成MapPoint
+            /// 步骤6.8：三角化生成3D点成功，构造成MapPoint
             MapPoint* pMP = new MapPoint(x3D,mpCurrentKeyFrame,mpMap);
 
-            // 步骤6.9：为该MapPoint添加属性：
+            /// 步骤6.9：为该MapPoint添加属性：
             // a.观测到该MapPoint的关键帧
             // b.该MapPoint的描述子
             // c.该MapPoint的平均观测方向和深度范围
@@ -577,7 +584,7 @@ void LocalMapping::CreateNewMapPoints()
 
             mpMap->AddMapPoint(pMP);
 
-            // 步骤6.8：将新产生的点放入检测队列
+            /// 步骤6.10：将新产生的点放入检测队列
             // 这些MapPoints都会经过MapPointCulling函数的检验
             mlpRecentAddedMapPoints.push_back(pMP);
 

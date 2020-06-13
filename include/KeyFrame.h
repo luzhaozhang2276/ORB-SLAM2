@@ -208,7 +208,7 @@ protected:
     // SE3 Pose and camera center
     cv::Mat Tcw;
     cv::Mat Twc;
-    cv::Mat Ow;
+    cv::Mat Ow; ///< mtwc,Translation from camera to world
 
     cv::Mat Cw; // Stereo middel point. Only for visualization
 

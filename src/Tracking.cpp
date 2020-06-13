@@ -744,10 +744,12 @@ void Tracking::MonocularInitialization()
         // 单目初始帧提取的特征点数必须大于100，否则放弃该帧图像
         if(mCurrentFrame.mvKeys.size()>100)
         {
-            // 步骤1：得到用于初始化的第一帧，初始化需要两帧
+            /// 步骤1：得到用于初始化的第一帧，初始化需要两帧
             mInitialFrame = Frame(mCurrentFrame);
             // 记录最近的一帧
-            mLastFrame = Frame(mCurrentFrame);
+            mLastFrame = Frame(mCurrentFrame);  // TO DO: 这么写,两帧不是一样的吗??? 是一样的,但是不是用这两帧来初始化
+                                                // 是用mInitialFrame与mCurrentFrame进行初始化,mCurrentFrame会更新
+                                                // mLastFrame 的用途呢??? 在单目初始化中没用上,在Tracking中用上了
             // mvbPrevMatched最大的情况就是所有特征点都被跟踪上
             mvbPrevMatched.resize(mCurrentFrame.mvKeysUn.size());
             for(size_t i=0; i<mCurrentFrame.mvKeysUn.size(); i++)
@@ -758,7 +760,7 @@ void Tracking::MonocularInitialization()
                 delete mpInitializer;
 
             // 由当前帧构造初始器 sigma:1.0 iterations:200
-            mpInitializer =  new Initializer(mCurrentFrame,1.0,200);
+            mpInitializer =  new Initializer(mCurrentFrame,1.0,200);    // 创建单目初始器
 
             fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
 
@@ -768,9 +770,10 @@ void Tracking::MonocularInitialization()
     else
     {
         // Try to initialize
-        // 步骤2：如果当前帧特征点数大于100，则得到用于单目初始化的第二帧
+        /// 步骤2：如果当前帧特征点数大于100，则得到用于单目初始化的第二帧
         // 如果当前帧特征点太少，重新构造初始器
         // 因此只有连续两帧的特征点个数都大于100时，才能继续进行初始化过程
+        // 单目进行初始化时,使用的是相邻的两帧Frame
         if((int)mCurrentFrame.mvKeys.size()<=100)
         {
             delete mpInitializer;
@@ -780,14 +783,14 @@ void Tracking::MonocularInitialization()
         }
 
         // Find correspondences
-        // 步骤3：在mInitialFrame与mCurrentFrame中找匹配的特征点对
+        /// 步骤3：在mInitialFrame与mCurrentFrame中找匹配的特征点对
         // mvbPrevMatched为前一帧的特征点，存储了mInitialFrame中哪些点将进行接下来的匹配
         // mvIniMatches存储mInitialFrame,mCurrentFrame之间匹配的特征点
         ORBmatcher matcher(0.9,true);
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
 
         // Check if there are enough correspondences
-        // 步骤4：如果初始化的两帧之间的匹配点太少，重新初始化
+        /// 步骤4：如果初始化的两帧之间的匹配点太少，重新初始化
         if(nmatches<100)
         {
             delete mpInitializer;
@@ -799,11 +802,12 @@ void Tracking::MonocularInitialization()
         cv::Mat tcw; // Current Camera Translation
         vector<bool> vbTriangulated; // Triangulated Correspondences (mvIniMatches)
 
-        // 步骤5：通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints
+        /// 步骤5：通过H模型或F模型进行单目初始化，得到两帧间相对运动、初始MapPoints
+        // 主要函数: Initialize() 并行计算H和F模型,只返回评分高的模型
         if(mpInitializer->Initialize(mCurrentFrame, mvIniMatches, Rcw, tcw, mvIniP3D, vbTriangulated))
         {
-            // 步骤6：删除那些无法进行三角化的匹配点
-            for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++)
+            /// 步骤6：删除那些无法进行三角化的匹配点
+            for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++)   // 遍历初始匹配对
             {
                 if(mvIniMatches[i]>=0 && !vbTriangulated[i])
                 {
@@ -821,7 +825,7 @@ void Tracking::MonocularInitialization()
             tcw.copyTo(Tcw.rowRange(0,3).col(3));
             mCurrentFrame.SetPose(Tcw);
 
-            // 步骤6：将三角化得到的3D点包装成MapPoints
+            /// 步骤6：将三角化得到的3D点包装成MapPoints
             // Initialize函数会得到mvIniP3D，
             // mvIniP3D是cv::Point3f类型的一个容器，是个存放3D点的临时变量，
             // CreateInitialMapMonocular将3D点包装成MapPoint类型存入KeyFrame和Map中
@@ -841,19 +845,19 @@ void Tracking::CreateInitialMapMonocular()
     KeyFrame* pKFini = new KeyFrame(mInitialFrame,mpMap,mpKeyFrameDB);
     KeyFrame* pKFcur = new KeyFrame(mCurrentFrame,mpMap,mpKeyFrameDB);
 
-    // 步骤1：将初始关键帧的描述子转为BoW
+    /// 步骤1：将初始关键帧的描述子转为BoW
     pKFini->ComputeBoW();
-    // 步骤2：将当前关键帧的描述子转为BoW
+    /// 步骤2：将当前关键帧的描述子转为BoW
     pKFcur->ComputeBoW();
 
     // Insert KFs in the map
-    // 步骤3：将关键帧插入到地图
-    // 凡是关键帧，都要插入地图
+    /// 步骤3：将关键帧插入到地图
+    // 凡是关键帧，都要插入地图     TO DO: 局部地图 or 全局地图 ??? 全局地图
     mpMap->AddKeyFrame(pKFini);
     mpMap->AddKeyFrame(pKFcur);
 
     // Create MapPoints and asscoiate to keyframes
-    // 步骤4：将3D点包装成MapPoints
+    /// 步骤4：将3D点包装成MapPoints
     for(size_t i=0; i<mvIniMatches.size();i++)
     {
         if(mvIniMatches[i]<0)
@@ -862,15 +866,15 @@ void Tracking::CreateInitialMapMonocular()
         //Create MapPoint.
         cv::Mat worldPos(mvIniP3D[i]);
 
-        // 步骤4.1：用3D点构造MapPoint
+        /// 步骤4.1：用3D点构造MapPoint
         MapPoint* pMP = new MapPoint(worldPos,pKFcur,mpMap);
 
-        // 步骤4.2：为该MapPoint添加属性：
+        /// 步骤4.2：为该MapPoint添加属性：
         // a.观测到该MapPoint的关键帧
         // b.该MapPoint的描述子
         // c.该MapPoint的平均观测方向和深度范围
 
-        // 步骤4.3：表示该KeyFrame的哪个特征点可以观测到哪个3D点
+        /// 步骤4.3：表示该KeyFrame的哪个特征点可以观测到哪个3D点
         pKFini->AddMapPoint(pMP,i);
         pKFcur->AddMapPoint(pMP,mvIniMatches[i]);
 
@@ -888,12 +892,12 @@ void Tracking::CreateInitialMapMonocular()
         mCurrentFrame.mvbOutlier[mvIniMatches[i]] = false;
 
         //Add to Map
-        // 步骤4.4：在地图中添加该MapPoint
+        /// 步骤4.4：在地图中添加该MapPoint
         mpMap->AddMapPoint(pMP);
     }
 
     // Update Connections
-    // 步骤5：更新关键帧间的连接关系，对于一个新创建的关键帧都会执行一次关键连接关系更新
+    /// 步骤5：更新关键帧间的连接关系，对于一个新创建的关键帧都会执行一次关键连接关系更新
     // 在3D点和关键帧之间建立边，每个边有一个权重，边的权重是该关键帧与当前帧公共3D点的个数
     pKFini->UpdateConnections();
     pKFcur->UpdateConnections();
@@ -901,11 +905,11 @@ void Tracking::CreateInitialMapMonocular()
     // Bundle Adjustment
     cout << "New Map created with " << mpMap->MapPointsInMap() << " points" << endl;
 
-    // 步骤5：BA优化
+    /// 步骤6：BA优化
     Optimizer::GlobalBundleAdjustemnt(mpMap,20);
 
     // Set median depth to 1
-    // 步骤6：!!!将MapPoints的中值深度归一化到1，并归一化两帧之间变换
+    /// 步骤7：!!!将MapPoints的中值深度归一化到1，并归一化两帧之间变换
     // 单目传感器无法恢复真实的深度，这里将点云中值深度（欧式距离，不是指z）归一化到1
     // 评估关键帧场景深度，q=2表示中值
     float medianDepth = pKFini->ComputeSceneMedianDepth(2);

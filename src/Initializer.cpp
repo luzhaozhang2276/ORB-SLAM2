@@ -51,12 +51,16 @@ Initializer::Initializer(const Frame &ReferenceFrame, float sigma, int iteration
 
 /**
  * @brief 并行地计算基础矩阵和单应性矩阵，选取其中一个模型，恢复出最开始两帧之间的相对姿态以及点云
+ * 恢复相对位姿和点云(MapPoints)
+ * 此函数仅用于单目初始化
  */
 bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatches12, cv::Mat &R21, cv::Mat &t21,
                              vector<cv::Point3f> &vP3D, vector<bool> &vbTriangulated)
 {
     // Fill structures with current keypoints and matches with reference frame
     // Reference Frame: 1, Current Frame: 2
+    // Reference 是不是构造初始器时的第一帧,在单目中是mInitialFrame ??? yes
+
     // Frame2 特征点
     mvKeys2 = CurrentFrame.mvKeysUn;
 
@@ -67,7 +71,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     // 这个变量后面没有用到，后面只关心匹配上的特征点
     mvbMatched1.resize(mvKeys1.size());
 
-    // 步骤1：组织特征点对 {i, matched(i)}
+    /// 步骤1：组织特征点对 {i, matched(i)}
     for(size_t i=0, iend=vMatches12.size();i<iend; i++)
     {
         if(vMatches12[i]>=0)
@@ -94,7 +98,7 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     }
 
     // Generate sets of 8 points for each RANSAC iteration
-    // 步骤2：在所有匹配特征点对中随机选择8对匹配特征点为一组，共选择mMaxIterations组
+    /// 步骤2：在所有匹配特征点对中随机选择8对匹配特征点为一组，共选择mMaxIterations组
     // 用于FindHomography和FindFundamental求解
     // mMaxIterations:200
     mvSets = vector< vector<size_t> >(mMaxIterations,vector<size_t>(8,0));
@@ -123,13 +127,14 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     }
 
     // Launch threads to compute in parallel a fundamental matrix and a homography
-    // 步骤3：调用多线程分别用于计算fundamental matrix和homography
+    /// 步骤3：调用多线程分别用于计算fundamental matrix和homography
     vector<bool> vbMatchesInliersH, vbMatchesInliersF;
     float SH, SF; // score for H and F
     cv::Mat H, F; // H and F
 
     // ref是引用的功能:http://en.cppreference.com/w/cpp/utility/functional/ref
-    // 计算homograpy并打分
+    // C++ 11标准,用于值传递(引用)
+    // 计算homography并打分
     thread threadH(&Initializer::FindHomography,this,ref(vbMatchesInliersH), ref(SH), ref(H));
     // 计算fundamental matrix并打分
     thread threadF(&Initializer::FindFundamental,this,ref(vbMatchesInliersF), ref(SF), ref(F));
@@ -139,13 +144,14 @@ bool Initializer::Initialize(const Frame &CurrentFrame, const vector<int> &vMatc
     threadF.join();
 
     // Compute ratio of scores
-    // 步骤4：计算得分比例，选取某个模型
+    /// 步骤4：计算得分比例，选取某个模型
     float RH = SH/(SH+SF);
 
     // Try to reconstruct from homography or fundamental depending on the ratio (0.40-0.45)
-    // 步骤5：从H矩阵或F矩阵中恢复R,t
+    /// 步骤5：从H矩阵或F矩阵中恢复R,t
     // 参数50: 满足checkRT检测的3D点个数（checkRT时会恢复3D点）
     // 参数1.0：进行checkRT时恢复的3D点视差角阈值
+    // pose存于R,t    3D点存于vP3D
     if(RH>0.40)
         return ReconstructH(vbMatchesInliersH,H,mK,R21,t21,vP3D,vbTriangulated,1.0,50);
     else //if(pF_HF>0.6)
