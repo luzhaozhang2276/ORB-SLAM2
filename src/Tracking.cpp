@@ -1706,7 +1706,7 @@ void Tracking::UpdateLocalKeyFrames()
         if(pKF->isBad())
             continue;
 
-        if(it->second>max)      // todo: map->second对应的是索引值,求取max的意义???
+        if(it->second>max)      // TODO: map->second对应的是索引值,求取max的意义???
         {
             max=it->second;
             pKFmax=pKF;
@@ -1785,7 +1785,7 @@ void Tracking::UpdateLocalKeyFrames()
     if(pKFmax)
     {
         mpReferenceKF = pKFmax;
-        mCurrentFrame.mpReferenceKF = mpReferenceKF;    // todo:此处的参考关键帧对后续有什么意义???参与了什么运算
+        mCurrentFrame.mpReferenceKF = mpReferenceKF;    // TODO:此处的参考关键帧对后续有什么意义???参与了什么运算
     }
 }
 

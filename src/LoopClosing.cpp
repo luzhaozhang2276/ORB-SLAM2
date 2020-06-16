@@ -117,11 +117,12 @@ bool LoopClosing::DetectLoop()
         mpCurrentKF = mlpLoopKeyFrameQueue.front();
         mlpLoopKeyFrameQueue.pop_front();
         // Avoid that a keyframe can be erased while it is being process by this thread
+        // 避免该关键帧在处理过程中被删除
         mpCurrentKF->SetNotErase();
     }
 
     //If the map contains less than 10 KF or less than 10 KF have passed from last loop detection
-    // 步骤1：如果距离上次闭环没多久（小于10帧），或者map中关键帧总共还没有10帧，则不进行闭环检测
+    /// 步骤1：如果距离上次闭环没多久（小于10帧），或者map中关键帧总共还没有10帧，则不进行闭环检测
     if(mpCurrentKF->mnId<mLastLoopKFid+10)
     {
         mpKeyFrameDB->add(mpCurrentKF);
@@ -133,25 +134,26 @@ bool LoopClosing::DetectLoop()
     // This is the lowest score to a connected keyframe in the covisibility graph
     // We will impose loop candidates to have a higher similarity than this
     // VIII-A
-    // 步骤2：遍历所有共视关键帧，计算当前关键帧与每个共视关键的bow相似度得分，并得到最低得分minScore
+    /// 步骤2：遍历所有共视关键帧，计算当前关键帧与每个共视关键的bow相似度得分，并得到最低得分minScore
     const vector<KeyFrame*> vpConnectedKeyFrames = mpCurrentKF->GetVectorCovisibleKeyFrames();
-    const DBoW2::BowVector &CurrentBowVec = mpCurrentKF->mBowVec;
+    const DBoW2::BowVector &CurrentBowVec = mpCurrentKF->mBowVec;   // 当前帧的bow
     float minScore = 1;
-    for(size_t i=0; i<vpConnectedKeyFrames.size(); i++)
+    for(size_t i=0; i<vpConnectedKeyFrames.size(); i++) // 遍历当前关键帧的所有共视关键帧
     {
         KeyFrame* pKF = vpConnectedKeyFrames[i];
-        if(pKF->isBad())
+        if(pKF->isBad())    // 忽略冗余关键帧
             continue;
-        const DBoW2::BowVector &BowVec = pKF->mBowVec;
+        const DBoW2::BowVector &BowVec = pKF->mBowVec;  // 获取该共视关键帧的bow
 
-        float score = mpORBVocabulary->score(CurrentBowVec, BowVec);
+        float score = mpORBVocabulary->score(CurrentBowVec, BowVec);    // 计算两个bow的相似度得分
 
-        if(score<minScore)
+        if(score<minScore)      // 求解与当前帧bow相似度的最低得分(越高越相似,最低分是为了后续计算)
             minScore = score;
     }
 
     // Query the database imposing the minimum score
-    // 步骤3：在所有关键帧中找出闭环备选帧
+    /// 步骤3：在所有关键帧中找出闭环备选帧
+    // TODO: 共视关键帧前边不都是相邻的关键帧吗?怎么会闭环情况???
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectLoopCandidates(mpCurrentKF, minScore);
 
     // If there are no loop candidates, just add new keyframe and return false
@@ -167,7 +169,7 @@ bool LoopClosing::DetectLoop()
     // Each candidate expands a covisibility group (keyframes connected to the loop candidate in the covisibility graph)
     // A group is consistent with a previous group if they share at least a keyframe
     // We must detect a consistent loop in several consecutive keyframes to accept it
-    // 步骤4：在候选帧中检测具有连续性的候选帧
+    /// 步骤4：在候选帧中检测具有连续性的候选帧
     // 1、每个候选帧将与自己相连的关键帧构成一个“子候选组spCandidateGroup”，vpCandidateKFs-->spCandidateGroup
     // 2、检测“子候选组”中每一个关键帧是否存在于“连续组”，如果存在nCurrentConsistency++，则将该“子候选组”放入“当前连续组vCurrentConsistentGroups”
     // 3、如果nCurrentConsistency大于等于3，那么该”子候选组“代表的候选帧过关，进入mvpEnoughConsistentCandidates
