@@ -1269,7 +1269,7 @@ int ORBmatcher::Fuse(KeyFrame *pKF, cv::Mat Scw, const vector<MapPoint *> &vpPoi
 int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &vpMatches12,
                              const float &s12, const cv::Mat &R12, const cv::Mat &t12, const float th)
 {
-    // 步骤1：变量初始化
+    /// 步骤1：变量初始化
     const float &fx = pKF1->fx;
     const float &fy = pKF1->fy;
     const float &cx = pKF1->cx;
@@ -1298,7 +1298,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     vector<bool> vbAlreadyMatched1(N1,false);// 用于记录该特征点是否被处理过
     vector<bool> vbAlreadyMatched2(N2,false);// 用于记录该特征点是否在pKF1中有匹配
 
-    // 步骤2：用vpMatches12更新vbAlreadyMatched1和vbAlreadyMatched2
+    /// 步骤2：用vpMatches12更新vbAlreadyMatched1和vbAlreadyMatched2
     for(int i=0; i<N1; i++)
     {
         MapPoint* pMP = vpMatches12[i];
@@ -1315,7 +1315,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     vector<int> vnMatch2(N2,-1);
 
     // Transform from KF1 to KF2 and search
-    // 步骤3.1：通过Sim变换，确定pKF1的特征点在pKF2中的大致区域，
+    /// 步骤3.1：通过Sim变换，确定pKF1的特征点在pKF2中的大致区域，
     //         在该区域内通过描述子进行匹配捕获pKF1和pKF2之前漏匹配的特征点，更新vpMatches12
     //         （之前使用SearchByBoW进行特征点匹配时会有漏匹配）
     for(int i1=0; i1<N1; i1++)
@@ -1403,7 +1403,7 @@ int ORBmatcher::SearchBySim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint*> &
     }
 
     // Transform from KF2 to KF1 and search
-    // 步骤3.2：通过Sim变换，确定pKF2的特征点在pKF1中的大致区域，
+    /// 步骤3.2：通过Sim变换，确定pKF2的特征点在pKF1中的大致区域，
     //         在该区域内通过描述子进行匹配捕获pKF1和pKF2之前漏匹配的特征点，更新vpMatches12
     //         （之前使用SearchByBoW进行特征点匹配时会有漏匹配）
     for(int i2=0; i2<N2; i2++)

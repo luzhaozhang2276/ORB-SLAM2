@@ -184,7 +184,7 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
         vAvailableIndices = mvAllIndices;
 
         // Get min set of points
-        // 步骤1：任意取三组点算Sim矩阵
+        /// 步骤1：任意取三组点算Sim矩阵
         for(short i = 0; i < 3; ++i)
         {
             int randi = DUtils::Random::RandomInt(0, vAvailableIndices.size()-1);
@@ -202,10 +202,10 @@ cv::Mat Sim3Solver::iterate(int nIterations, bool &bNoMore, vector<bool> &vbInli
             vAvailableIndices.pop_back();
         }
 
-        // 步骤2：根据两组匹配的3D点，计算之间的Sim3变换
+        /// 步骤2：根据两组匹配的3D点，计算之间的Sim3变换
         ComputeSim3(P3Dc1i,P3Dc2i);
 
-        // 步骤3：通过投影误差进行inlier检测
+        /// 步骤3：通过投影误差进行inlier检测
         CheckInliers();
 
         if(mnInliersi>=mnBestInliers)
