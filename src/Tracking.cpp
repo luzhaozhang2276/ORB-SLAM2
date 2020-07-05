@@ -370,7 +370,10 @@ void Tracking::Track()
                 // Local Mapping might have changed some MapPoints tracked in last frame
                 // 检查并更新上一帧被替换的MapPoints
                 // 更新Fuse函数和SearchAndFuse函数替换的MapPoints
-                // TODO: frame影响的是local mapping;而keyframe才会影响全局的map   是否正确???  更新的是局部的还是全局的mappoints?
+                // TO DO: frame影响的是local mapping;而keyframe才会影响全局的map   是否正确???  更新的是局部的还是全局的mappoints?
+                // 1.普通frame只影响Local mapping,在下一个线程中,才会影响全局的map,切写一个线程(LocalMapping的输入是Keyframe)
+                // 2.此处并不是为了增加MapPoints,而是在后续的两个线程中,都存在MapPoints的fuse操作,此处是为了进行更新检查和操作,确保每一帧
+                //   都是MapPoints进行fuse后的最新结果
                 CheckReplacedInLastFrame();
 
                 /// 步骤2.1：跟踪上一帧或者参考帧或者重定位
@@ -1246,7 +1249,8 @@ bool Tracking::TrackLocalMap()
     // Update Local KeyFrames and Local Points
     /// 步骤1：更新局部关键帧mvpLocalKeyFrames和局部地图点mvpLocalMapPoints
     UpdateLocalMap();
-    // TODO : local map 什么时候转成全局的Map,转换条件?
+    // TO DO : local map 什么时候转成全局的Map,转换条件? 无全局map一说
+    // local map只是将关键帧的map(即keyframe和mappoints)永久保存前,进行一个小范围内的筛选和优化
 
     /// 步骤2：在局部地图中查找与当前帧匹配的MapPoints
     // 匹配结果存于Frame中,即mCurrentFrame
@@ -1792,12 +1796,12 @@ void Tracking::UpdateLocalKeyFrames()
 bool Tracking::Relocalization()
 {
     // Compute Bag of Words Vector
-    // 步骤1：计算当前帧特征点的Bow映射
+    /// 步骤1：计算当前帧特征点的Bow映射
     mCurrentFrame.ComputeBoW();
 
     // Relocalization is performed when tracking is lost
     // Track Lost: Query KeyFrame Database for keyframe candidates for relocalisation
-    // 步骤2：找到与当前帧相似的候选关键帧
+    /// 步骤2：找到与当前帧相似的候选关键帧
     vector<KeyFrame*> vpCandidateKFs = mpKeyFrameDB->DetectRelocalizationCandidates(&mCurrentFrame);
 
     if(vpCandidateKFs.empty())
@@ -1827,7 +1831,7 @@ bool Tracking::Relocalization()
             vbDiscarded[i] = true;
         else
         {
-            // 步骤3：通过BoW进行匹配
+            /// 步骤3：通过BoW进行匹配
             int nmatches = matcher.SearchByBoW(pKF,mCurrentFrame,vvpMapPointMatches[i]);
             if(nmatches<15)
             {
@@ -1862,7 +1866,7 @@ bool Tracking::Relocalization()
             int nInliers;
             bool bNoMore;
 
-            // 步骤4：通过EPnP算法估计姿态
+            /// 步骤4：通过EPnP算法估计姿态
             PnPsolver* pSolver = vpPnPsolvers[i];
             cv::Mat Tcw = pSolver->iterate(5,bNoMore,vbInliers,nInliers);
 
@@ -1893,7 +1897,7 @@ bool Tracking::Relocalization()
                         mCurrentFrame.mvpMapPoints[j]=NULL;
                 }
 
-                // 步骤5：通过PoseOptimization对姿态进行优化求解
+                /// 步骤5：通过PoseOptimization对姿态进行优化求解
                 int nGood = Optimizer::PoseOptimization(&mCurrentFrame);
 
                 if(nGood<10)
@@ -1904,7 +1908,7 @@ bool Tracking::Relocalization()
                         mCurrentFrame.mvpMapPoints[io]=static_cast<MapPoint*>(NULL);
 
                 // If few inliers, search by projection in a coarse window and optimize again
-                // 步骤6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
+                /// 步骤6：如果内点较少，则通过投影的方式对之前未匹配的点进行匹配，再进行优化求解
                 if(nGood<50)
                 {
                     int nadditional =matcher2.SearchByProjection(mCurrentFrame,vpCandidateKFs[i],sFound,10,100);
